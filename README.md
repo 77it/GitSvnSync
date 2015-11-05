@@ -8,6 +8,7 @@ The only 2 files you have to touch are:
 To execute the script "Sync-Repos.stex.ps1" from Windows you have to enable
 execution of unsigned scripts with the Powershell command:
 > "Set-ExecutionPolicy RemoteSigned"
+
 For further info see https://technet.microsoft.com/library/hh849812.aspx and 
 http://superuser.com/questions/106360/how-to-enable-execution-of-powershell-scripts
 

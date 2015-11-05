@@ -1,2 +1,2 @@
 # GitSvnSync
-script to automating working with Git and Svn repositories
+powershell scripts to automate working with Git and Svn repositories

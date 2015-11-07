@@ -1,13 +1,18 @@
 # GitSvnSync
-Powershell scripts to commit/fetch/merge/push many Git and Svn repositories automatically.
+Powershell scripts to commit/fetch/merge/push automatically a group of Git and Subversion repositories.
 
 Best Features:
+* works without problem with a list of Git|Subversion repositories, stored locally, on a usb disk,
+on a network share or online
+* to add|remove|edit a repository just edit a .csv file, no Powershell scripting is knowledge required
 * if Git|Svn central repositories (bare repositories) are stored in an external disk this script can search
 all drives for the repository and remap the remote url ("git remote" or "svn relocate") automatically
 * all Git|Svn command output are checked for errors, and only error message are shown to the user
 * with Unattended mode the user will have to choose what repository to sync and no other question will be asked;
 otherwise, the user will be asked for confirmation only for commit/merge/push with content (empty commit/merge/push
-will be skipped without question to the user).
+will be skipped without question to the user)
+* the script saves automatically a series of log files, to see only relevant messages (.diff.txt for diffs, .core.txt
+for essential messages etc)
 
 
 

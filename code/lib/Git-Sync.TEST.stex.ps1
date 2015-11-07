@@ -20,7 +20,7 @@ limitations under the License. #>
 # Setup Home so that Git doesn't freak out.
 [System.Environment]::SetEnvironmentVariable("HOME", (Join-Path $Env:HomeDrive $Env:HomePath), "Process")
 
-$MyDocsPath = [Environment]::GetFolderPath("mydocuments")$date = Get-Date -format "yyyyMMddhhmmss"
+$MyDocsPath = [Environment]::GetFolderPath("mydocuments")$date = Get-Date -format "yyyyMMddHHmmss"
 $LogFilePath = $MyDocsPath + '\' + 'Sync-Repos-Log.' + $date + '.log.txt'
 "#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####" >> $LogFilePath
 
@@ -52,13 +52,16 @@ param (
 
 
 
-$Action = "CommitUpdate"
-$WkPath = "C:\Users\Stefano\Desktop\vcs sample, svn repo + wk\repo normal.svnwk"
-$BareRepoPath ="C:\Users\Stefano\Desktop\vcs sample, svn repo + wk\repo bare.svn"
+$Action = "FetchMergeErrorIfCommit"
+$WkPath = "C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo normal.gitwk"
+#$WkPath = "C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo detached.gitwk2"
+$BranchName = "master"
+$BareRepoName = "origin" #optional 
+$BareRepoPath ="C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo bare.git"
+$CachePwdSec = "3600"
 $CommitMessage = ""
-$Unattended = "True"
-
-& $PSScriptRoot'.\lib-Svn-Sync.stex.ps1' -Action $Action -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath -CommitMessage $CommitMessage -Unattended $Unattended
+$Unattended = "False"
+& $PSScriptRoot'.\Git-Sync.stex.ps1' -Action $Action -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath -Unattended $Unattended
 
 
 

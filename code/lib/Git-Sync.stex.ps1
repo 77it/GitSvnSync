@@ -16,12 +16,12 @@ limitations under the License. #>
 <# 
 script Git-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 201511050614
+rev 2015-11-07 02.13
 
 Input:
 > -Action:   (case insensitive)
   >> CommitFetchMergePush:  COMMIT(diff)+FETCH+MERGE(diff)+PUSH+LOG
-  >> FetchMerge:   FETCH+MERGE+STATUS
+  >> FetchMergeErrorIfCommit:   FETCH+MERGE+ERROR IF COMMIT (error if there is something to commit in the local directory)
   >> CommitPush:   STATUS+COMMIT+PUSH+LOG
   >> Status:   STATUS
   >> Commit:   COMMIT+LOG
@@ -33,8 +33,8 @@ Input:
 > [-BareRepoName]
   opzionale, nome del bare repository (remote-name)
 > [-BareRepoPath]
-  opzionale, path del bare repository; se questo valore è presente, the Remote -BareRepoName is checked in WK $WkPath and if the tracked remote repository
-  is different from -BareRepoPath, in -BareRepoName remote URL is replaced with -BareRepoPath
+  optional, path of bare repository; if this value is present -BareRepoPath is compared with the repo url defined in -BareRepoName; 
+  if the tracked remote repository is different, the remote URL is replaced in -BareRepoName with -BareRepoPath
 > -LogFilePath
   il nome del file di LOG nel quale appendere il dettaglio di ciò che viene fatto (una sintesi viene scritta nella command line)
 > [-CommitMessage]
@@ -106,55 +106,95 @@ MAIN
     $ReturnFlag = $true
 
     # START MESSAGE
-    write-host  "Repo '" $WkPath "' START " $Action -foregroundcolor "White" -backgroundcolor "blue"
+    write-host  "`nRepo '" $WkPath "' START " $Action -foregroundcolor "White" -backgroundcolor "blue"
 
     # SET Environment
     . SetEnvironment
 
     # do checks
-    . Checks
-
-    # if -BareRepoPath has a value <> "" 
-    # the Remote -BareRepoName is checked in WK $WkPath and if the tracked remote repository is different from -BareRepoPath, in -BareRepoName remote URL is replaced with -BareRepoPath
-    if ($BareRepoPath)
+    #
+    # if error with checks, Return Error
+    if (!(Checks))
     {
-        . ActionReplaceBareRepoPath -WkPath $WkPath -BareRepoName $BareRepoName -BareRepoPath $BareRepoPath > $null
+        ErrorMessage ("Checks failed, sync SKIPPED; read LOG for details")   # error message on stdout 
+        $ReturnFlag = $false   # Return Error
     }
+    # if no error with checks
+    else
+    {
+        # If -BareRepoPath has a value <> "" 
+        # -BareRepoPath is compared with the repo url defined in -BareRepoName.
+        # If the tracked remote repository is different, the remote URL is replaced in -BareRepoName with -BareRepoPath.
+        # If $BareRepoPath is not a valid Remote Repository 
+        # DOESN'T revert to the old tracked URL (because is not what the user asked, to push to a different URL).
+        if ($BareRepoPath)
+        {
+            . ActionReplaceBareRepoPath -WkPath $WkPath -BareRepoName $BareRepoName -RevertIfError "False" -BareRepoPath $BareRepoPath > $null
+        }
 
-    # do actions
-    switch ($Action) 
-    { 
-        "CommitFetchMergePush"
-            {
-                if (!(. ActionCommitFetchMergePush))
+        # do actions
+        switch ($Action) 
+        { 
+            "CommitFetchMergePush"
                 {
-                # if ERROR with Git command
-                    ErrorMessage ("ERROR with Git Commit+Fetch+Merge+Push in "+$WkPath)   # error message on stdout
+                    if (!(. ActionCommitFetchMergePush))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Commit+Fetch+Merge+Push in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                }
+            "FetchMergeErrorIfCommit"
+                {
+                    if (!(. ActionFetchMergeErrorIfCommit))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Fetch+Merge+ErrorIfCommit in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                }
+            "CommitPush"
+                {
+                    if (!(. ActionCommitPush))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Commit+Push in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
+            "Status"
+                {
+                    if (!(. ActionStatus))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Status in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
+            "Commit"
+                {
+                    if (!(. ActionCommit))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Commit in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
+            "LogToday"
+                {
+                    if (!(. ActionLogToday))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git LogToday in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
+            default
+                {
+                    ErrorMessage ("-Action ( " + $Action + " ) is not a valid action !!!" )   # error message on stdout
                     $ReturnFlag = $false   # Return Error
                 }
-            }
-        "FetchMerge"
-            {
-                . ActionFetchMerge
-            }
-        "CommitPush"
-            {
-                . ActionCommitPush
-            } 
-        "Status"
-            {
-                . ActionStatus
-            } 
-        "Commit"
-            {
-                . ActionCommit
-            } 
-        "LogToday"
-            {
-                . ActionLogToday
-            } 
-        default
-            { throw "-Action ( " + $Action + " ) is not a valid action !!!" }
+        }
     }
 
     # END MESSAGE
@@ -215,31 +255,43 @@ check if file exists:
 #>
     If (!(Test-Path -path $LogFilePath -PathType Leaf))
     {
-        throw "-LogFilePath ( " + $LogFilePath + " ) is not a file !!!"
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-LogFilePath ( " + $LogFilePath + " ) is not a file !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
 
 <#
 check if dirs exists:
 > WkPath
-> [BareRepoPath]
 #>
     If (!(Test-Path -path $WkPath -PathType Container))
     {
-        throw "-WkPath ( " + $WkPath + " ) is not a directory !!!"
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
-
+
+
+<#
+!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
+
+check if dirs exists:
+> [BareRepoPath]
+#>
+<#
     If ( ($BareRepoPath -ne "") -and (!(Test-Path -path $BareRepoPath -PathType Container)) )
     {
-        throw "-BareRepoPath ( " + $BareRepoPath + " ) is not a directory !!!"   
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoPath ( " + $BareRepoPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
+#>
 
 <#
 check if is a working copy:
 > WkPath
 #>
-    If (! (. GitTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
+    If (! (GitTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
     {
-        throw "-WkPath ( " + $WkPath + " ) is not a directory under Git control !!!"   
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Git control !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
     
 <#
@@ -250,46 +302,61 @@ check if remote name is defined in WkPath:
     If ($BareRepoName -ne "")
     {
         # if $BareRepoName is not a Remote in $WkPath, exit with error
-        If (! (. GitTestIfRemoteIsDefined -PathToTest $WkPath -NameToTest $BareRepoName -LogFilePath $LogFilePath ))    
+        If (! (GitTestIfRemoteIsDefined -PathToTest $WkPath -NameToTest $BareRepoName -LogFilePath $LogFilePath ))    
         {
-            throw "-BareRepoName ( " + $BareRepoName + " ) is not a Remote defined in '" + $WkPath + "' !!!"   
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoName ( " + $BareRepoName + " ) is not a Remote defined in '" + $WkPath + "' !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
         }
     }
 
 <#
+!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
+
 check if remote path contains a bare repository:
 > [BareRepoPath]
 #>
+<#
     # if $BareRepoName is defined, continue with testing
     If ($BareRepoPath -ne "")
     {
         # if $BareRepoPath is not a bare repository, exit with error
-        If (! (. GitTestIfRepoIsBare $BareRepoPath $LogFilePath))    
+        If (! (GitTestIfRepoIsBare $BareRepoPath $LogFilePath))    
         {
-            throw "-BareRepoPath ( " + $BareRepoPath + " ) is not a Bare Repository !!!"   
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoPath ( " + $BareRepoPath + " ) is not a Bare Repository !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
         }
     }
+#>
 
 <#
 check if BranchName is defined in:
 > WkPath (working copy)
-> BareRepoPath (bare repository, if defined):
 #>
     # if $BranchName is not a branch defined in $WkPath, exit with error
-    If (! (. GitTestIfBranchIsDefined -PathToTest $WkPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
+    If (! (GitTestIfBranchIsDefined -PathToTest $WkPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
     {
-        throw "-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $WkPath + "' !!!"   
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $WkPath + "' !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
 
+<#
+!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
+
+check if BranchName is defined in:
+> BareRepoPath (bare repository, if defined):
+#>
+<#
     # if $BareRepoName is defined, continue with testing
     If ($BareRepoPath -ne "")
     {
         # if $BranchName is not a branch defined in $BareRepoPath, exit with error
-        If (! (. GitTestIfBranchIsDefined -PathToTest $BareRepoPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
+        If (! (GitTestIfBranchIsDefined -PathToTest $BareRepoPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
         {
-            throw "-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $BareRepoPath + "' !!!"   
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $BareRepoPath + "' !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
         }
     }
+#>
 
 <#
 check if Action is one element of the list
@@ -299,7 +366,7 @@ if Action have needed parameters:
   WkPath
   BranchName
   BareRepoName
-> FetchMerge:   
+> FetchMergeErrorIfCommit:   
   WkPath
   BranchName
   BareRepoName
@@ -320,35 +387,56 @@ if Action have needed parameters:
         "CommitFetchMergePush"
         {
             if (! ( ($WkPath) -and ($BranchName) -and ($BareRepoName) ) )
-            { throw "Missing one parameter in -WkPath, BranchName, BareRepoName" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing one or more parameters in -WkPath, BranchName, BareRepoName"+"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
-        "FetchMerge"
+        "FetchMergeErrorIfCommit"
         {
             if (! ( ($WkPath) -and ($BranchName) -and ($BareRepoName) ) )
-            { throw "Missing one parameter in -WkPath, BranchName, BareRepoName" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing one or more parameters in -WkPath, BranchName, BareRepoName"+"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         }
         "CommitPush"
         {
             if (! ( ($WkPath) -and ($BranchName) -and ($BareRepoName) ) )
-            { throw "Missing one parameter in -WkPath, BranchName, BareRepoName" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing one or more parameters in -WkPath, BranchName, BareRepoName" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
         "Status"
         {
             if (! ($WkPath) )
-            { throw "Missing -WkPath" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
         "Commit"
         {
             if (! ( ($WkPath) -and ($BranchName) ) )
-            { throw "Missing one parameter in -WkPath, BranchName" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing one or more parameters in -WkPath, BranchName" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
         "LogToday"
         {
             if (! ($WkPath) )
-            { throw "Missing -WkPath" }
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
         default
-        { throw "-Action ( " + $Action + " ) is not a valid action !!!" }
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-Action ( " + $Action + " ) is not a valid action !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
 
 <#
@@ -373,11 +461,15 @@ check Unattended value
             $UnattBool=$false
         } 
         default
-        { throw "-Unattended ( " + $Unattended + " ) is not True or False !!!" }
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-Unattended ( " + $Unattended + " ) is not True or False !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
 
+    # return success value
+    return $true
 }
-
 
 
 
@@ -450,17 +542,18 @@ function ActionReplaceBareRepoPath ()
 param (
     [string]$WkPath = $(throw "-WkPath is required."),
     [string]$BareRepoName = $(throw "-BareRepoName is required."),
+    [string]$RevertIfError = $(throw "-RevertIfError is required."),
     [string]$BareRepoPath = $(throw "-BareRepoPath is required.")
 )
 
     # read the remote URL tracked by $BareRepoName 
-    $RemoteTrackedRepo = . GitReadRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+    $RemoteTrackedRepo = GitReadRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath
 
     # if the remote URL tracked by $BareRepoName is <> $BareRepoPath then
     # $BareRepoName tracked URL is replaced with $BareRepoPath
     if ($RemoteTrackedRepo -ne $BareRepoPath)
     {
-        . GitReplaceRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath > $null
+        GitReplaceRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -BareRepoPath $BareRepoPath -RevertIfError $RevertIfError -LogFilePath $LogFilePath > $null
     }
 }
 
@@ -473,7 +566,7 @@ function ActionCommitFetchMergePush ()
     $ReturnFlag = $true
 
     # git add
-    if (!(. GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git ADD in "+$WkPath)   # error message on stdout
@@ -481,7 +574,7 @@ function ActionCommitFetchMergePush ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -490,7 +583,7 @@ function ActionCommitFetchMergePush ()
     # if not unattended, show git status
     if (! $UnattBool)
     {
-        $cmdOutput = . GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
+        $cmdOutput = GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
         # if there is some status message, print the message
         if ($cmdOutput)
         {
@@ -499,7 +592,7 @@ function ActionCommitFetchMergePush ()
         }
     }
     # git status, and check if command goes in error
-    if (!(. GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
+    if (!(GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git STATUS in "+$WkPath)   # error message on stdout
@@ -507,19 +600,19 @@ function ActionCommitFetchMergePush ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
     # git Commit
     #
     # if there is something to commit...
-    if (. GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
+    if (GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
     {
         # if unattended, commit
         if ($UnattBool)
         {
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
@@ -531,23 +624,23 @@ function ActionCommitFetchMergePush ()
         {
             write-host "`nGit COMMIT" -ForegroundColor Red
             # git commit diff on Log
-            . GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
+            GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Commit diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to COMMIT <paused...>`n"
+            Pause -PauseMessage "Press any key to COMMIT <paused...>`n"
             # commit
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
     # git fetch
-    if (!(. GitFetch -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+    if (!(GitFetch -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git FETCH in "+$WkPath)   # error message on stdout
@@ -555,7 +648,7 @@ function ActionCommitFetchMergePush ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -563,12 +656,12 @@ function ActionCommitFetchMergePush ()
     # git Merge
     #
     # if there is something to Merge...
-    if (. GitCheckIfMergeIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
+    if (GitCheckIfMergeIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
     {
         # if unattended, Merge
         if ($UnattBool)
         {
-            if (!(. GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git MERGE in "+$WkPath)   # error message on stdout
@@ -580,20 +673,20 @@ function ActionCommitFetchMergePush ()
         {
             # short git Merge diff on STDOUT
             write-host "`nGit MERGE" -ForegroundColor Red
-            $cmdOutput = . GitMergeDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+            $cmdOutput = GitMergeDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
             write-host $cmdOutput
             # git Merge diff on Log
-            . GitMergeDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
+            GitMergeDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Merge diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to MERGE <paused...>"
+            Pause -PauseMessage "Press any key to MERGE <paused...>"
             # Merge
-            if (!(. GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git MERGE in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
@@ -601,12 +694,12 @@ function ActionCommitFetchMergePush ()
     # git push
     #
     # if there is something to Push...
-    if (. GitCheckIfPushIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
+    if (GitCheckIfPushIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
     {
         # if unattended, Push
         if ($UnattBool)
         {
-            if (!(. GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git PUSH in "+$WkPath)   # error message on stdout
@@ -618,27 +711,27 @@ function ActionCommitFetchMergePush ()
         {
             # short git Push diff on STDOUT
             write-host "`nGit PUSH" -ForegroundColor Red
-            $cmdOutput = . GitPushDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+            $cmdOutput = GitPushDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
             write-host $cmdOutput
             # git Push diff on Log
-            . GitPushDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
+            GitPushDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Push diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to PUSH <paused...>"
+            Pause -PauseMessage "Press any key to PUSH <paused...>"
             # Push
-            if (!(. GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git PUSH in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
 
     # git log
-    if (!(. GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
@@ -650,14 +743,14 @@ function ActionCommitFetchMergePush ()
 
 }
 
-# FetchMerge:   FETCH+MERGE+STATUS
-function ActionFetchMerge ()
+# FetchMergeErrorIfCommit:   FETCH+MERGE+ERROR IF COMMIT (error if there is something to commit in the local directory)
+function ActionFetchMergeErrorIfCommit ()
 {
     # iniziatlize Return Flag
     $ReturnFlag = $true
 
     # git fetch
-    if (!(. GitFetch -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+    if (!(GitFetch -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git FETCH in "+$WkPath)   # error message on stdout
@@ -665,7 +758,7 @@ function ActionFetchMerge ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -673,12 +766,12 @@ function ActionFetchMerge ()
     # git Merge
     #
     # if there is something to Merge...
-    if (. GitCheckIfMergeIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
+    if (GitCheckIfMergeIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
     {
         # if unattended, Merge
         if ($UnattBool)
         {
-            if (!(. GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git MERGE in "+$WkPath)   # error message on stdout
@@ -690,52 +783,37 @@ function ActionFetchMerge ()
         {
             # short git Merge diff on STDOUT
             write-host "`nGit MERGE" -ForegroundColor Red
-            $cmdOutput = . GitMergeDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+            $cmdOutput = GitMergeDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
             write-host $cmdOutput
             # git Merge diff on Log
-            . GitMergeDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
+            GitMergeDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Merge diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to MERGE <paused...>"
+            Pause -PauseMessage "Press any key to MERGE <paused...>"
             # Merge
-            if (!(. GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitMerge -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git MERGE in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
-    # git status: Print / Check if error
-    #
-    # if not unattended, show git status
-    if (! $UnattBool)
+    # if there is something to commit, ERROR !!!
+    if (GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
     {
-        $cmdOutput = . GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
-        # if there is some status message, print the message
-        if ($cmdOutput)
-        {
-            write-host "`nGit STATUS" -ForegroundColor Red
-            write-host $cmdOutput
-        }
-    }
-    # git status, and check if command goes in error
-    if (!(. GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
-    {
-    # if ERROR with Git command
-        ErrorMessage ("ERROR with Git STATUS in "+$WkPath)   # error message on stdout
-        $ReturnFlag = $false   # set Return Flag to False
-        # if not Unattended pause
-        if (! $UnattBool)
-        {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
-        }
-    }
+        ErrorMessage ("ERROR, there is something to COMMIT in "+ $WkPath + "; Git Status saved in LOG")   # error message on stdout
+        GitStatus -WkPath $WkPath -LogFilePath ($LogFilePath + ".error.txt")   # save Git Status on ERROR LOG
+        $ReturnFlag = $false
+        if (! $UnattBool)   # if not Unattended, PAUSE
+        { Pause -PauseMessage "check LOG and continue <paused...>`n" }
+    }   
+
 
     # git log
-    if (!(. GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
@@ -755,7 +833,7 @@ function ActionCommitPush ()
     $ReturnFlag = $true
 
     # git add
-    if (!(. GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git ADD in "+$WkPath)   # error message on stdout
@@ -763,7 +841,7 @@ function ActionCommitPush ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -772,7 +850,7 @@ function ActionCommitPush ()
     # if not unattended, show git status
     if (! $UnattBool)
     {
-        $cmdOutput = . GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
+        $cmdOutput = GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
         # if there is some status message, print the message
         if ($cmdOutput)
         {
@@ -781,7 +859,7 @@ function ActionCommitPush ()
         }
     }
     # git status, and check if command goes in error
-    if (!(. GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
+    if (!(GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git STATUS in "+$WkPath)   # error message on stdout
@@ -789,19 +867,19 @@ function ActionCommitPush ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
     # git Commit
     #
     # if there is something to commit...
-    if (. GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
+    if (GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
     {
         # if unattended, commit
         if ($UnattBool)
         {
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
@@ -813,17 +891,17 @@ function ActionCommitPush ()
         {
             write-host "`nGit COMMIT" -ForegroundColor Red
             # git commit diff on Log
-            . GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
+            GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Commit diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to COMMIT <paused...>`n"
+            Pause -PauseMessage "Press any key to COMMIT <paused...>`n"
             # commit
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
@@ -831,12 +909,12 @@ function ActionCommitPush ()
     # git push
     #
     # if there is something to Push...
-    if (. GitCheckIfPushIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
+    if (GitCheckIfPushIsNeeded -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath)
     {
         # if unattended, Push
         if ($UnattBool)
         {
-            if (!(. GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git PUSH in "+$WkPath)   # error message on stdout
@@ -848,27 +926,27 @@ function ActionCommitPush ()
         {
             # short git Push diff on STDOUT
             write-host "`nGit PUSH" -ForegroundColor Red
-            $cmdOutput = . GitPushDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+            $cmdOutput = GitPushDiffMessage -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath
             write-host $cmdOutput
             # git Push diff on Log
-            . GitPushDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
+            GitPushDiff -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Push diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to PUSH <paused...>"
+            Pause -PauseMessage "Press any key to PUSH <paused...>"
             # Push
-            if (!(. GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+            if (!(GitPush -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git PUSH in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
 
     # git log
-    if (!(. GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
@@ -892,7 +970,7 @@ function ActionStatus ()
     # if not unattended, show git status
     if (! $UnattBool)
     {
-        $cmdOutput = . GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
+        $cmdOutput = GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
         # if there is some status message, print the message
         if ($cmdOutput)
         {
@@ -901,7 +979,7 @@ function ActionStatus ()
         }
     }
     # git status, and check if command goes in error
-    if (!(. GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
+    if (!(GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git STATUS in "+$WkPath)   # error message on stdout
@@ -909,7 +987,7 @@ function ActionStatus ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -925,7 +1003,7 @@ function ActionCommit ()
     $ReturnFlag = $true
 
     # git add
-    if (!(. GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitAdd -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git ADD in "+$WkPath)   # error message on stdout
@@ -933,7 +1011,7 @@ function ActionCommit ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -942,7 +1020,7 @@ function ActionCommit ()
     # if not unattended, show git status
     if (! $UnattBool)
     {
-        $cmdOutput = . GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
+        $cmdOutput = GitStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
         # if there is some status message, print the message
         if ($cmdOutput)
         {
@@ -951,7 +1029,7 @@ function ActionCommit ()
         }
     }
     # git status, and check if command goes in error
-    if (!(. GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
+    if (!(GitStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git STATUS in "+$WkPath)   # error message on stdout
@@ -959,19 +1037,19 @@ function ActionCommit ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
     # git Commit
     #
     # if there is something to commit...
-    if (. GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
+    if (GitCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
     {
         # if unattended, commit
         if ($UnattBool)
         {
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
@@ -983,23 +1061,23 @@ function ActionCommit ()
         {
             write-host "`nGit COMMIT" -ForegroundColor Red
             # git commit diff on Log
-            . GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
+            GitCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Commit diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to COMMIT <paused...>`n"
+            Pause -PauseMessage "Press any key to COMMIT <paused...>`n"
             # commit
-            if (!(. GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(GitCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Git command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Git COMMIT in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
     # git log
-    if (!(. GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
@@ -1019,7 +1097,7 @@ function ActionLogToday ()
     $ReturnFlag = $true
 
     # git log
-    if (!(. GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(GitLog -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Git command
         ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
@@ -1083,12 +1161,13 @@ param (
     $GitCommands = "config", "credential.helper", ("cache --timeout="+$CachePwdSec)
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called to set 'credential.helper cache --timeout' to " + $CachePwdSec + " seconds in "+$WkPath) $cmdOutput 
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called to set 'credential.helper cache --timeout' to " + $CachePwdSec + " seconds in "+$WkPath) $cmdOutput 
     
     # check exit code
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called to set 'credential.helper cache --timeout' to " + $CachePwdSec + " seconds in "+$WkPath) $cmdOutput 
         return $false   # exit function with ERROR
     }
 
@@ -1134,12 +1213,13 @@ param (
     $GitCommands = "remote", "show", $BareRepoName
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called to read the URL tracked by remote " + $BareRepoName + " in "+$WkPath) $cmdOutput #DEBUG#
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called to read the URL tracked by remote " + $BareRepoName + " in "+$WkPath) $cmdOutput #DEBUG#
 
     # check exit code
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called to read the URL tracked by remote " + $BareRepoName + " in "+$WkPath) $cmdOutput #DEBUG#
         return ""   # exit function with ERROR
     }
 
@@ -1171,12 +1251,13 @@ param (
 
 <#
 Replace in Remote -BareRepoName (defined in WK -WkPath) the tracked URL with with -BareRepoPath.
-Don't do any replacement if -BareRepoPath is not a valid tracked URL.
+Optionally don't do any replacement if -BareRepoPath is not a valid tracked URL (if -RevertIfError = "True").
 
 Input:
 > WkPath: Working Copy path to read
 > BareRepoName: Remote name 
 > BareRepoPath: Tracked remote path
+> RevertIfError: "True"|"False"; if "True", revert old tracked URL if error; if "False", *doesn't* revert old URL if error
 > LogFilePath: log file path
 
 Return:
@@ -1195,6 +1276,7 @@ param (
     [string]$WkPath = $(throw "-WkPath is required."),
     [string]$BareRepoName = $(throw "-BareRepoName is required."),
     [string]$BareRepoPath = $(throw "-BareRepoPath is required."),
+    [string]$RevertIfError = $(throw "-RevertIfError is required."),
     [string]$LogFilePath = $(throw "-LogFilePath is required.")
 )
 
@@ -1202,22 +1284,27 @@ param (
     cd $WkPath
 
     # save the remote tracked URL in $BareRepoName before editing it to restore it if there is some error
-    $RemoteTrackedRepo = . GitReadRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath
+    $RemoteTrackedRepo = GitReadRemoteTrackedRepo -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath
 
     # run "git remote set-url $BareRepoName $BareRepoPath" to replace in the Remote $BareRepoName the tracked URL with $BareRepoPath
     $GitCommands = "remote", "set-url", $BareRepoName, $BareRepoPath
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called to replace URL tracked by remote " + $BareRepoName + " in "+$WkPath + " WK to " + $BareRepoPath + "new tracked URL.") $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called to replace URL tracked by remote " + $BareRepoName + " in "+$WkPath + " WK to " + $BareRepoPath + "new tracked URL.") $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     # > restore the old tracked URL
     # > exit with error
     if ($LASTEXITCODE -ne 0)
     {
-        $GitCommands = "remote", "set-url", $BareRepoName, $RemoteTrackedRepo
-        $cmdOutput = & "git" $GitCommands 2>&1
-        . LogAppend $LogFilePath ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+        # if $RevertIfError = "True", revert old tracked URL
+        if ($RevertIfError -eq "True")
+        {
+            $GitCommands = "remote", "set-url", $BareRepoName, $RemoteTrackedRepo
+            $cmdOutput = & "git" $GitCommands 2>&1
+            LogAppend $LogFilePath ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+            LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+        }
         return $false   # exit function with ERROR
     }
 
@@ -1225,16 +1312,20 @@ param (
     $GitCommands = "remote", "show", $BareRepoName
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called to show details of remote " + $BareRepoName + " in "+$WkPath) $cmdOutput #DEBUG#
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called to show if remote tracked URL replacement was successful in Remote " + $BareRepoName + " in Wk "+$WkPath) $cmdOutput #DEBUG#
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
-    # > restore the old tracked URL
+    # > if $RevertIfError = "True" restore the old tracked URL
     # > exit with error
     if ($LASTEXITCODE -ne 0)
     {
-        $GitCommands = "remote", "set-url", $BareRepoName, $RemoteTrackedRepo
-        $cmdOutput = & "git" $GitCommands 2>&1
-        . LogAppend $LogFilePath ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+        if ($RevertIfError -eq "True") 
+        {
+            $GitCommands = "remote", "set-url", $BareRepoName, $RemoteTrackedRepo
+            $cmdOutput = & "git" $GitCommands 2>&1
+            LogAppend $LogFilePath ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+            LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called to restore tracked URL by remote " + $BareRepoName + " in "+$WkPath + " WK.") $cmdOutput
+        }
         return $false   # exit function with ERROR
     }
 
@@ -1275,11 +1366,12 @@ param (
     $GitCommands = "add", "--all"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called to add all files in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called to add all files in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called to add all files in "+$WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1322,11 +1414,13 @@ param (
     $GitCommands = "status"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        #NOT NEEDED, IS A MARGINAL COMMAND, AND SOMETIMES GitStatus is called with Log Path already with ".error.txt", as with Action FetchMergeErrorIfCommit
+        #LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1367,7 +1461,7 @@ param (
     $GitCommands = "status", "--porcelain"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
 
     # return Git status message
     return $cmdOutput
@@ -1407,11 +1501,12 @@ param (
     $GitCommands = "diff", "HEAD"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("git "+$GitCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1453,11 +1548,12 @@ param (
     $GitCommands = "status", "--porcelain"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in "+$WkPath) $cmdOutput
         return $false   # exit function with False (nothing to commit)
     }
 
@@ -1507,11 +1603,12 @@ param (
     # run "git commit -m '$CommitMessage'" and save in LOG 
     $GitCommands = "commit", "-m", $CommitMessage
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1554,11 +1651,12 @@ param (
     # run "git fetch" and save in LOG 
     $GitCommands = "fetch", $BareRepoName
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1605,17 +1703,18 @@ param (
     $GitCommands = "diff", "--stat", "$BranchName...$BareRepoName/$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called short DIFF before MERGE in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("git "+$GitCommands) (" called short DIFF before MERGE in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # run "git diff $BranchName...$BareRepoName/$BranchName" and save in LOG
     $GitCommands = "diff", "$BranchName...$BareRepoName/$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called DIFF before MERGE in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("git "+$GitCommands) (" called DIFF before MERGE in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
     
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called DIFF before MERGE in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1661,11 +1760,12 @@ param (
     $GitCommands = "diff", "--stat", "$BranchName...$BareRepoName/$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with False (nothing to Merge)
     }
 
@@ -1717,7 +1817,7 @@ param (
     $GitCommands = "diff", "--stat", "$BranchName...$BareRepoName/$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # return Git status message
     return $cmdOutput
@@ -1763,11 +1863,12 @@ param (
     # run "git merge $BareRepoName/$BranchName" and save in LOG 
     $GitCommands = "merge", "$BareRepoName/$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1814,17 +1915,18 @@ param (
     $GitCommands = "diff", "--stat", "$BareRepoName/$BranchName...$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called Short DIFF before PUSH in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("git "+$GitCommands) (" called Short DIFF before PUSH in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # run "git diff $BareRepoName/$BranchName...$BranchName" and save in LOG
     $GitCommands = "diff", "$BareRepoName/$BranchName...$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called DIFF before PUSH in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("git "+$GitCommands) (" called DIFF before PUSH in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
     
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called DIFF before PUSH in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -1870,11 +1972,12 @@ param (
     $GitCommands = "diff", "--stat", "$BareRepoName/$BranchName...$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with False (nothing to commit)
     }
 
@@ -1926,7 +2029,7 @@ param (
     $GitCommands = "diff", "--stat", "$BareRepoName/$BranchName...$BranchName"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    #LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # return Git status message
     return $cmdOutput
@@ -1972,11 +2075,12 @@ param (
     # run "git Push $BareRepoName $BranchName" and save in LOG 
     $GitCommands = "push", $BareRepoName, $BranchName, "--porcelain"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -2024,27 +2128,28 @@ param (
     # DELETED
     $GitCommands = "log", "--diff-filter=D", "--name-status", "--find-copies=100%", "--since='1 day'"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend -LogFilePath ($LogFilePath + ".log2.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
     # ADDED
     $GitCommands = "log", "--diff-filter=A", "--name-status", "--find-copies=100%", "--since='1 day'"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend -LogFilePath ($LogFilePath + ".log2.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
     # MODIFIED
     $GitCommands = "log", "--diff-filter=M", "--name-status", "--find-copies=100%", "--since='1 day'"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend -LogFilePath ($LogFilePath + ".log2.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
     # RENAMED
     $GitCommands = "log", "--diff-filter=R", "--name-status", "--find-copies=100%", "--since='1 day'"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend -LogFilePath ($LogFilePath + ".log2.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
     # ALL
     $GitCommands = "log", "--name-status", "--find-copies=100%", "--since='1 day'"
     $cmdOutput = & "git" $GitCommands 2>&1
-    . LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend -LogFilePath ($LogFilePath + ".log2.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -2090,12 +2195,13 @@ param (
     $GitCommands = "branch"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a branch defined in '"+$PathToTest+"'.") $cmdOutput #DEBUG#
+    #LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a branch defined in '"+$PathToTest+"'.") $cmdOutput #DEBUG#
     
     # check exit code
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a branch defined in '"+$PathToTest+"'.") $cmdOutput #DEBUG#
         return $false   # exit function with ERROR
     }
 
@@ -2153,9 +2259,10 @@ param (
     cd $PathToTest
     $GitCommands = "status", "--porcelain"
     $cmdOutput = & "git" $GitCommands 2>&1
-    #DEBUG# . LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is under git control") $cmdOutput #DEBUG#
+    #DEBUG# LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is under git control") $cmdOutput #DEBUG#
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is under git control") $cmdOutput 
         return $false   # exit function with ERROR
     }
     
@@ -2200,7 +2307,7 @@ param (
     $GitCommands = "remote"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a remote defined in '"+$PathToTest+"'.") $cmdOutput #DEBUG#
+    #LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a remote defined in '"+$PathToTest+"'.") $cmdOutput #DEBUG#
     #$cmdOutput = $null #DEBUG#   #test following code with $null value
     #$cmdOutput = "origin" #DEBUG#   #test following code with a string value
     #$cmdOutput = "origin", "origin2" #DEBUG#   #test following code with an array value
@@ -2209,6 +2316,7 @@ param (
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called to check if '"+$NameToTest+"' is a remote defined in '"+$PathToTest+"'.") $cmdOutput 
         return $false   # exit function with ERROR
     }
 
@@ -2255,12 +2363,13 @@ param (
     $GitCommands = "config", "core.bare"
     $cmdOutput = & "git" $GitCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
+    #LogAppend $LogFilePath ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
     
     # check exit code
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
         return $false   # exit function with ERROR
     }
 
@@ -2336,8 +2445,8 @@ START OF THE PROGRAM
 
 
 
-. LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "start" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "start" -CommandOutputToLog ""
 
 . Main
 
-. LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""

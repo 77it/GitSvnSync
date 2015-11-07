@@ -20,7 +20,7 @@ limitations under the License. #>
 # Setup Home so that Git doesn't freak out.
 [System.Environment]::SetEnvironmentVariable("HOME", (Join-Path $Env:HomeDrive $Env:HomePath), "Process")
 
-$MyDocsPath = [Environment]::GetFolderPath("mydocuments")$date = Get-Date -format "yyyyMMddhhmmss"
+$MyDocsPath = [Environment]::GetFolderPath("mydocuments")$date = Get-Date -format "yyyyMMddHHmmss"
 $LogFilePath = $MyDocsPath + '\' + 'Sync-Repos-Log.' + $date + '.log.txt'
 "#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####" >> $LogFilePath
 
@@ -49,13 +49,14 @@ $CommandOutputToLog = $(throw "-CommandOutputToLog is required.")
 
 
 
+
+
+
+
 "hello!"
 
-    $MyDocsPath = [Environment]::GetFolderPath("mydocuments")    $date = Get-Date -format "yyyyMMddhhmmss"
-    $LogFilePath = $MyDocsPath + '\' + 'Sync-Repos-Log.' + $date + '.log.txt'
-    "#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####" >> $LogFilePath
+$date = Get-Date -format "yyyyMMddHHmmss"
 
-
-
+$date
 
 "end!"

@@ -17,13 +17,13 @@ limitations under the License. #>
 Ricerca in tutti i drive il file -IdOfDriveToSearch
 
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 201510250147
+rev 2015-11-06 13.34
 
 Input:
 > -IdOfDriveToSearch
 
 Return:
-> il path del drive nel quale il file è stato trovato, es "C:\" oppure "Z:\"
+> la lettera del drive nel quale il file è stato trovato, es "C" oppure "Z"
 > se -IdOfDriveToSearch non viene trovato restituisce BLANK/NULLA/VUOTO
 
 Event:
@@ -61,7 +61,7 @@ param (
         If ($Found)
     {
         # return $IdOfDriveToSearch
-        $Drive + ":\"
+        $Drive
     }
     else {}   # return NOTHING
 

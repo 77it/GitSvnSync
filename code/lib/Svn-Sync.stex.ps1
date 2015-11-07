@@ -16,7 +16,7 @@ limitations under the License. #>
 <# 
 script Svn-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 201511050511
+rev 2015-11-07 01.41
 
 Input:
 > -Action:   (case insensitive)
@@ -25,6 +25,7 @@ Input:
   path della working directory
 > [-BareRepoPath]
   opzionale, path del bare repository; se questo valore è presente, viene eseguito il comando "svn relocate" sulla nuova Repository Root
+  il formato di questo parametro deve essere quello richiesto da "svn relocate", quindi "file:///C:/e4-linked/@svnbare/piccolaimpresa   res.big.svn"
 > -LogFilePath
   il nome del file di LOG nel quale appendere il dettaglio di ciò che viene fatto (una sintesi viene scritta nella command line)
 > [-CommitMessage]
@@ -84,28 +85,36 @@ MAIN
     $ReturnFlag = $true
 
     # START MESSAGE
-    write-host  "Repo '" $WkPath "' START " $Action -foregroundcolor "White" -backgroundcolor "blue"
+    write-host  "`nRepo '" $WkPath "' START " $Action -foregroundcolor "White" -backgroundcolor "blue"
 
     # SET Environment
     . SetEnvironment
 
     # do checks
-    . Checks
-
-    # if -BareRepoPath has a value <> "" 
-    # if this value is present is executed the command "svn relocate" with the new Repository Root 
-    if ($BareRepoPath)
+    #
+    # if error with checks, Return Error
+    if (!(Checks))
     {
-        if (!(. SvnReplaceRepositoryRoot -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath))
-        {
-            ErrorMessage ("ERROR with Svn Relocate of " + $WkPath + " to " + $BareRepoPath )   # error message on stdout
-        }
+        ErrorMessage ("Checks failed, sync SKIPPED; read LOG for details")   # error message on stdout 
+        $ReturnFlag = $false   # Return Error
     }
+    # if no error with checks
+    else
+    {
+        # if -BareRepoPath has a value <> "" 
+        # if this value is present is executed the command "svn relocate" with the new Repository Root 
+        if ($BareRepoPath)
+        {
+            if (!(SvnReplaceRepositoryRoot -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath))
+            {
+                ErrorMessage ("ERROR with Svn Relocate of " + $WkPath + " to " + $BareRepoPath )   # error message on stdout
+            }
+        }
         
-    # do actions
-    switch ($Action) 
-    { 
-        "CommitUpdate"
+        # do actions
+        switch ($Action) 
+        { 
+            "CommitUpdate"
             {
                 if (!(. ActionCommitUpdate))
                 {
@@ -114,8 +123,12 @@ MAIN
                     $ReturnFlag = $false   # Return Error
                 }
             }
-        default
-            { throw "-Action ( " + $Action + " ) is not a valid action !!!" }
+            default
+            { 
+                ErrorMessage ("-Action ( " + $Action + " ) is not a valid action !!!")   # error message on stdout
+                $ReturnFlag = $false   # Return Error
+            }
+        }
     }
 
     # END MESSAGE
@@ -171,46 +184,65 @@ check if file exists:
 #>
     If (!(Test-Path -path $LogFilePath -PathType Leaf))
     {
-        throw "-LogFilePath ( " + $LogFilePath + " ) is not a file !!!"
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-LogFilePath ( " + $LogFilePath + " ) is not a file !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
 
 <#
 check if dirs exists:
 > WkPath
-> [BareRepoPath]
 #>
     If (!(Test-Path -path $WkPath -PathType Container))
     {
-        throw "-WkPath ( " + $WkPath + " ) is not a directory !!!"
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
 
+<#
+!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
+
+check if dirs exists:
+#>
+<#
+> [BareRepoPath]
     If ( ($BareRepoPath -ne "") -and (!(Test-Path -path $BareRepoPath -PathType Container)) )
     {
-        throw "-BareRepoPath ( " + $BareRepoPath + " ) is not a directory !!!"   
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoPath ( " + $BareRepoPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
+#>
+
 
 <#
 check if is a working copy:
 > WkPath
 #>
-    If (! (. SvnTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
+    If (! (SvnTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
     {
-        throw "-WkPath ( " + $WkPath + " ) is not a directory under Git control !!!"   
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Svn control !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
     }
+
     
 <#
+!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
+
 check if remote path contains a bare repository:
 > [BareRepoPath]
 #>
+<#
     # if $BareRepoName is defined, continue with testing
     If ($BareRepoPath -ne "")
     {
         # if $BareRepoPath is not a bare repository, exit with error
-        If (! (. SvnTestIfRepoIsBare $BareRepoPath $LogFilePath))    
+        If (! (SvnTestIfRepoIsBare $BareRepoPath $LogFilePath))    
         {
-            throw "-BareRepoPath ( " + $BareRepoPath + " ) is not a Bare Repository !!!"   
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoPath ( " + $BareRepoPath + " ) is not a Bare Repository !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
         }
     }
+#>
+
 
 <#
 check if Action is one element of the list
@@ -224,10 +256,16 @@ if Action have needed parameters:
         "CommitUpdate"
         {
             if (! ($WkPath) )
-            { throw "Missing -WkPath" }
+            { 
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
         } 
         default
-        { throw "-Action ( " + $Action + " ) is not a valid action !!!" }
+        { 
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-Action ( " + $Action + " ) is not a valid action !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
 
 
@@ -253,8 +291,14 @@ check Unattended value
             $UnattBool=$false
         } 
         default
-        { throw "-Unattended ( " + $Unattended + " ) is not True or False !!!" }
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-Unattended ( " + $Unattended + " ) is not True or False !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
+
+    # return success value
+    return $true
 
 }
 
@@ -277,6 +321,7 @@ SVN ACTIONS
 svn info
 
 
+#!!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
 # check if -BareRepoPath is a SVN repository
 svnadmin info .
 
@@ -319,7 +364,7 @@ function ActionCommitUpdate ()
     $ReturnFlag = $true
 
     # svn add (and do svn rm for all deleted files)
-    if (!(. SvnAdd -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(SvnAdd -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Svn command
         ErrorMessage ("ERROR with Svn ADD in "+$WkPath)   # error message on stdout
@@ -327,7 +372,7 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
@@ -336,7 +381,7 @@ function ActionCommitUpdate ()
     # if not unattended, show svn status
     if (! $UnattBool)
     {
-        $cmdOutput = . SvnStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
+        $cmdOutput = SvnStatusMessage -WkPath $WkPath -LogFilePath $LogFilePath 
         # if there is some status message, print the message
         if ($cmdOutput)
         {
@@ -345,7 +390,7 @@ function ActionCommitUpdate ()
         }
     }
     # svn status, and check if command goes in error
-    if (!(. SvnStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
+    if (!(SvnStatus -WkPath $WkPath -LogFilePath $LogFilePath))   
     {
     # if ERROR with Svn command
         ErrorMessage ("ERROR with Svn STATUS in "+$WkPath)   # error message on stdout
@@ -353,19 +398,19 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
 
     # svn Commit
     #
     # if there is something to commit...
-    if (. SvnCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
+    if (SvnCheckIfCommitIsNeeded -WkPath $WkPath -LogFilePath $LogFilePath)
     {
         # if unattended, commit
         if ($UnattBool)
         {
-            if (!(. SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Svn command, set Return Flag to False
             {
                 ErrorMessage ("ERROR with Svn COMMIT in "+$WkPath)   # error message on stdout
@@ -377,23 +422,23 @@ function ActionCommitUpdate ()
         {
             write-host "`nSvn COMMIT" -ForegroundColor Red
             # svn commit diff on Log
-            . SvnCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
+            SvnCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Commit diff on LOG `n"
             # pause
-            . pause -PauseMessage "Press any key to COMMIT <paused...>`n"
+            Pause -PauseMessage "Press any key to COMMIT <paused...>`n"
             # commit
-            if (!(. SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
+            if (!(SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Svn command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Svn COMMIT in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                . pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>`n"
             }   
         }
     }
 
     # svn update
-    if (!(. SvnUpdate -WkPath $WkPath -LogFilePath $LogFilePath))
+    if (!(SvnUpdate -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Svn command
         ErrorMessage ("ERROR with Svn UPDATE in "+$WkPath)   # error message on stdout
@@ -401,17 +446,10 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            . pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>`n"
         }
     }
-    # if no errors
-    else
-    {
-        if (! $UnattBool)
-        {
-            write-host "`nSvn UPDATE" -ForegroundColor Red
-        }
-    }
+
 
     # return Return Flag
     return $ReturnFlag
@@ -433,11 +471,14 @@ INTERNAL FUNCTIONS, SVN WRAPPERS
 
 
 <#
-Replace in working copy -WkPath the Repository Root with with -BareRepoPath.
+Replace in working copy -WkPath the Repository Root with with -BareRepoPath
+Is executed the command
+    $ svn relocate "file:///C:/e4-linked/@svnbare/piccolaimpresa   res.big.svn"
 
 Input:
 > WkPath: Working Copy path to read
 > BareRepoPath: New Repository Root
+  the format of this parameter is the same requested from "svn relocate": "file:///C:/e4-linked/@svnbare/piccolaimpresa   res.big.svn"
 > LogFilePath: log file path
 
 Return:
@@ -462,20 +503,17 @@ param (
     cd $WkPath
 
     # run "svn relocate $BareRepoPath" to replace in working copy -WkPath the Repository Root with with -BareRepoPath
-    #
-    # $BareRepoPath is transformed in the format "file:///C:/e4-linked/@svnbare/piccolaimpresa   res.big.svn"
-    $BareRepoPath="file:///"+$BareRepoPath.Replace("\","/")
-    # run "svn relocate $BareRepoPath"
     $SvnCommands = "relocate", $BareRepoPath
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) (" called to replace Repository Root in "+$WkPath + " WK to " + $BareRepoPath) $cmdOutput
+    LogAppend $LogFilePath ("svn "+$SvnCommands) (" called to replace Repository Root in "+$WkPath + " WK to " + $BareRepoPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     # > restore the old tracked URL
     # > exit with error
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) (" called to replace Repository Root in "+$WkPath + " WK to " + $BareRepoPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -520,11 +558,12 @@ param (
     $SvnCommands = "add", "*.*", "--force"
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) (" called to add all files in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("svn "+$SvnCommands) (" called to add all files in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) (" called to add all files in "+$WkPath) $cmdOutput
         $ReturnFlag = $false   # set return value to $false
     }
 
@@ -533,11 +572,12 @@ param (
     # from   http://stackoverflow.com/questions/9600382/svn-command-to-delete-all-locally-missing-files
     $cmdOutput = svn status | ? { $_ -match '^!\s+(.*)' } | % { svn rm $Matches[1] } 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("svn status | svn rm") (" called to remove from repository all deleted files in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("svn status | svn rm") (" called to remove from repository all deleted files in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn status | svn rm") (" called to remove from repository all deleted files in "+$WkPath) $cmdOutput
         $ReturnFlag = $false   # set return value to $false
     }
 
@@ -580,11 +620,12 @@ param (
     $SvnCommands = "status"
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
+    LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -625,7 +666,7 @@ param (
     $SvnCommands = "status"
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
+    #LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
 
     # return Git status message
     return $cmdOutput
@@ -665,11 +706,12 @@ param (
     $SvnCommands = "diff"
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
+    LogAppend ($LogFilePath + ".diff.txt") ("svn "+$SvnCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) (" called DIFF before COMMIT in " + $WkPath + ", branch " + $BranchName) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -711,11 +753,12 @@ param (
     $SvnCommands = "status"
     $cmdOutput = & "svn" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
+    #LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
         return $false   # exit function with False (nothing to commit)
     }
 
@@ -765,11 +808,12 @@ param (
     # run "svn commit -m '$CommitMessage'" and save in LOG 
     $SvnCommands = "commit", "-m", $CommitMessage
     $cmdOutput = & "svn" $SvnCommands 2>&1
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -810,11 +854,12 @@ param (
     # run "svn update" and save in LOG 
     $SvnCommands = "update"
     $cmdOutput = & "svn" $SvnCommands 2>&1
-    . LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 
@@ -865,9 +910,10 @@ param (
     cd $PathToTest
     $SvnCommands = "info"
     $cmdOutput = & "svn" $SvnCommands 2>&1
-    #DEBUG# . LogAppend $LogFilePath ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is under svn control") $cmdOutput #DEBUG#
+    #DEBUG# LogAppend $LogFilePath ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is under svn control") $cmdOutput #DEBUG#
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt")  ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is under svn control") $cmdOutput #DEBUG#
         return $false   # exit function with ERROR
     }
     
@@ -907,12 +953,13 @@ param (
     $SvnCommands = "info", "."
     $cmdOutput = & "svnadmin" $SvnCommands 2>&1
     #$cmdOutput #DEBUG#
-    #. LogAppend $LogFilePath ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
+    #LogAppend $LogFilePath ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
     
     # check exit code
     # exit with error if $LASTEXITCODE <> 0 
     if ($LASTEXITCODE -ne 0)
     {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) ("called to check if '"+$PathToTest+"' is a Bare repository") $cmdOutput #DEBUG#
         return $false   # exit function with ERROR
     }
 
@@ -981,8 +1028,8 @@ START OF THE PROGRAM
 
 
 
-. LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "start" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "start" -CommandOutputToLog ""
 
 . Main
 
-. LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""

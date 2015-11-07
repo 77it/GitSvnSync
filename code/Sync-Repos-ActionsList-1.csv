@@ -1,0 +1,6 @@
+Description;Category;RepoType;WkPath1Start;WkPath2DriveLetterID;WkPath3End;BranchName;RemoteName;RemotePath1Start;RemotePath2DriveLetterID;RemotePath3End;Action
+it;external 64gb;svn;;this disk   256gb V131 ssd   id20151019212500stex.txt;e3-shared\@svnwk\it   res.big.svnwk;;;file:///;this disk   64gb repos   Kingston DTSE9 G2   id20150528013000stex.txt;e3-shared/@svnbare/it   res.big.svn;CommitUpdate
+it;network 64gb;svn;;this disk   256gb V131 ssd   id20151019212500stex.txt;e3-shared\@svnwk\it   res.big.svnwk;;;;;file://V131/Ext64gbKingstonDtse9g2/@svnbare/it   res.big.svn;CommitUpdate
+mydocs;external 64gb;git;;this disk   256gb V131 ssd   id20151019212500stex.txt;e3-shared\@gitwk\mydocs.gitwk;master;originBareLocal ;;this disk   64gb repos   Kingston DTSE9 G2   id20150528013000stex.txt;e3-shared\@gitbare\mydocs.git;CommitFetchMergePush
+mywork524;external 64gb;git;;this disk   256gb V131 ssd   id20151019212500stex.txt;e3-shared\@gitwk\myworkisp-524.home.gitwk;master;originBareLocal ;;this disk   64gb repos   Kingston DTSE9 G2   id20150528013000stex.txt;e3-shared\@gitbare\myworkisp-524.desk.git;FetchMergeErrorIfCommit
+mywork524;external 32gb;git;;this disk   256gb V131 ssd   id20151019212500stex.txt;e3-shared\@gitwk\myworkisp-524.home.gitwk;master;originBareLocal ;;32 gb encrypted;;FetchMergeErrorIfCommit

@@ -18,6 +18,11 @@ script Mirr-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
 rev 201511022202
 
+This script call syncronization between 2 directories calling:
+> Winmerge    http://manual.winmerge.org/Command_line.html
+AND/OR 
+> Rsync 
+
 Input:
 todo XXXXXXXXXXXXXXXXXXXX
 

@@ -50,6 +50,13 @@ param (
 
 function Main
 {
+    # if log file is missing, tries to create it
+    If (!(Test-Path -path $LogFilePath -PathType Leaf))
+    {
+        "." >> $LogFilePath
+    }
+
+    # if log file is again missing, raise an error
     If (!(Test-Path -path $LogFilePath -PathType Leaf))
     {
         throw "-LogFilePath ( " + $LogFilePath + " ) is not a file !!!"

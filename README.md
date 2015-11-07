@@ -15,6 +15,10 @@ will be skipped without question to the user)
 for essential messages etc)
 
 
+The script can be also an useful cheatsheet of Git|Subversion commands, because all the commands run from the script
+can be run from the command line.
+
+
 
 The only 2 files you have to touch are:
 * "Sync-Repos.stex.ps1" to see what the start script do (and to execute it when you are ready)

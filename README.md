@@ -18,7 +18,7 @@ The only 2 files you have to touch are:
 
 
 To execute the script "Sync-Repos.stex.ps1" from Windows you have to enable
-execution of unsigned scripts with the Powershell command:
+execution of unsigned scripts with the Powershell command form and Administrator prompt:
 > "Set-ExecutionPolicy RemoteSigned"
 
 For further info see https://technet.microsoft.com/library/hh849812.aspx and 
@@ -27,3 +27,11 @@ http://superuser.com/questions/106360/how-to-enable-execution-of-powershell-scri
 
 
 The "lib" directory contains Powershell libraries written by me to work with Git/Svn repositories.
+
+
+
+To automate the use of repositories (eg online) that require passwords use Microsoft Git Credential Manager for Windows.
+This program stores password securely and "automagically" (the first time the user insert the password in any Git command
+the program saves them) and inserts automatically passwords for Git commands that require them.
+* https://github.com/Microsoft/Git-Credential-Manager-for-Windows   
+* https://github.com/Microsoft/Git-Credential-Manager-for-Windows/releases

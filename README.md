@@ -30,7 +30,7 @@ The "lib" directory contains Powershell libraries written by me to work with Git
 
 
 
-To automate the use of repositories (eg online) that require passwords use Microsoft Git Credential Manager for Windows.
+To automate the use of repositories (eg GitHub, Bitbucket) that require passwords use Microsoft Git Credential Manager for Windows.
 This program stores password securely and "automagically" (the first time the user insert the password in any Git command
 the program saves them) and inserts automatically passwords for Git commands that require them.
 * https://github.com/Microsoft/Git-Credential-Manager-for-Windows   

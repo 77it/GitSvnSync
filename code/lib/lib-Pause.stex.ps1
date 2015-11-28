@@ -17,7 +17,8 @@ limitations under the License. #>
 show message and PAUSE
 
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 201511022222
+
+rev 2015-11-07 13.42
 
 
 
@@ -48,7 +49,7 @@ param (
     { 
         if ($PauseMessage)
         {
-            Write-Host $PauseMessage
+            Write-Host $PauseMessage   # write user message
         }
         else
         {
@@ -56,6 +57,8 @@ param (
         }
         $Host.UI.RawUI.FlushInputBuffer()   # Make sure buffered input doesn't "press a key" and skip the ReadKey().
         $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyUp") > $null
+
+        Write-Host "."   # write a blank line
     }
     else
     # if not running in the console (e.g. is running in Powershell Ide in debug mode)
@@ -68,5 +71,4 @@ param (
 
 
 . Main
-
 

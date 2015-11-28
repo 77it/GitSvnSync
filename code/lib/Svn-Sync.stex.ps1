@@ -16,7 +16,7 @@ limitations under the License. #>
 <# 
 script Svn-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 2015-11-07 01.41
+rev 2015-11-28 01.54
 
 Input:
 > -Action:   (case insensitive)
@@ -93,7 +93,7 @@ MAIN
     # do checks
     #
     # if error with checks, Return Error
-    if (!(Checks))
+    if (!(. Checks))   # checks is called with "." for variable persistence
     {
         ErrorMessage ("Checks failed, sync SKIPPED; read LOG for details")   # error message on stdout 
         $ReturnFlag = $false   # Return Error
@@ -118,8 +118,8 @@ MAIN
             {
                 if (!(. ActionCommitUpdate))
                 {
-                # if ERROR with Git command
-                    ErrorMessage ("ERROR with Git COMMIT(diff)+UPDATE in "+$WkPath)   # error message on stdout
+                # if ERROR with Svn command
+                    ErrorMessage ("ERROR with Svn COMMIT(diff)+UPDATE in "+$WkPath)   # error message on stdout
                     $ReturnFlag = $false   # Return Error
                 }
             }
@@ -372,11 +372,11 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            Pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>"
         }
     }
 
-    # git status: Print / Check if error
+    # Svn status: Print / Check if error
     #
     # if not unattended, show svn status
     if (! $UnattBool)
@@ -398,7 +398,7 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            Pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>"
         }
     }
 
@@ -410,6 +410,9 @@ function ActionCommitUpdate ()
         # if unattended, commit
         if ($UnattBool)
         {
+            # svn commit diff on Log
+            SvnCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
+
             if (!(SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Svn command, set Return Flag to False
             {
@@ -425,19 +428,20 @@ function ActionCommitUpdate ()
             SvnCommitDiff -WkPath $WkPath -LogFilePath $LogFilePath > $null
             write-host "`nsaved detailed Commit diff on LOG `n"
             # pause
-            Pause -PauseMessage "Press any key to COMMIT <paused...>`n"
+            Pause -PauseMessage "Press any key to COMMIT <paused...>"
             # commit
             if (!(SvnCommit -WkPath $WkPath -CommitMessage $CommitMessage -LogFilePath $LogFilePath))
             # if ERROR with Svn command, set Return Flag to False and pause
             {
                 ErrorMessage ("ERROR with Svn COMMIT in "+$WkPath)   # error message on stdout
                 $ReturnFlag = $false
-                Pause -PauseMessage "check LOG and continue <paused...>`n"
+                Pause -PauseMessage "check LOG and continue <paused...>"
             }   
         }
     }
 
     # svn update
+    write-host "`nSvn UPDATE" -ForegroundColor Red
     if (!(SvnUpdate -WkPath $WkPath -LogFilePath $LogFilePath))
     {
     # if ERROR with Svn command
@@ -446,7 +450,7 @@ function ActionCommitUpdate ()
         # if not Unattended pause
         if (! $UnattBool)
         {
-            Pause -PauseMessage "check LOG and continue <paused...>`n"
+            Pause -PauseMessage "check LOG and continue <paused...>"
         }
     }
 
@@ -644,7 +648,7 @@ Input:
 > LogFilePath: log file path
 
 Return:
-> Git status output
+> Svn status output
 
 Event:
 > if error with parameters
@@ -668,7 +672,7 @@ param (
     #$cmdOutput #DEBUG#
     #LogAppend $LogFilePath ("svn "+$SvnCommands) (" called in "+$WkPath) $cmdOutput
 
-    # return Git status message
+    # return Svn status message
     return $cmdOutput
 
 }
@@ -762,7 +766,7 @@ param (
         return $false   # exit function with False (nothing to commit)
     }
 
-    # if there were some output to "git status --porcelain"
+    # if there were some output to "Svn status --porcelain"
     if ($cmdOutput)
     {
         # exit function with True (something to commit)
@@ -809,6 +813,7 @@ param (
     $SvnCommands = "commit", "-m", $CommitMessage
     $cmdOutput = & "svn" $SvnCommands 2>&1
     LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    LogAppend ($LogFilePath + ".core.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
 
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
@@ -856,6 +861,13 @@ param (
     $cmdOutput = & "svn" $SvnCommands 2>&1
     LogAppend $LogFilePath ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
 
+    # if "svn update" updated something (at row 2 there isn't the text "At revision ")
+    # write $cmdOutput in ".core" LOG
+    if (!(SearchArrayForRegexpInARow -ArrayToTest $cmdOutput -RowNumToTest 2 -RegexToTest "^At revision "))
+    {
+        LogAppend ($LogFilePath + ".core.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    }
+
     # if error in the last command ($LASTEXITCODE <> 0 ):
     if ($LASTEXITCODE -ne 0)
     {
@@ -874,7 +886,7 @@ param (
 Test if -PathToTest is a Svn working copy.
 
 Input:
-> -PathToTest   Git repository directory
+> -PathToTest   Svn repository directory
 > -LogFilePath   Log File
 
 Return:
@@ -969,6 +981,119 @@ param (
 
 
 
+
+<#
+################################################################################
+################################################################################
+
+INTERNAL FUNCTIONS
+
+################################################################################
+################################################################################
+#>
+
+<# 
+Powershell snippet >[#ListSelectItemPsSnippetStex20151107] on onenote
+#>
+<# 
+FUNCTION THAT TAKES AND UNSORTED/DUPLICATED LIST AND RETURN AN ITEM CHOOSEN BY THE USER
+
+Input:
+> -ListTotal   (an unsorted, duplicated list)
+
+Return:
+> the list item selected by the user
+> $null if user select a wrong item
+
+Event:
+> NONE
+
+Output:
+> NONE
+#>
+function ListSelectItem()
+{
+    param (
+    [array]$ListTotal = $(throw "-ListTotal is required."),
+    [string]$MessageToUser = $(throw "-MessageToUser is required.")
+    )
+    
+    # make unique, sorted list
+    $ListSortUnique = $ListTotal | sort -Unique
+
+    # show message to the user
+    write-host $MessageToUser
+
+    # show element number and list element
+    $Count=0
+    foreach ($elem in $ListSortUnique)
+    {
+        write-host ($count, ">", $elem, "<", $count) 
+        $count = $count + 1
+    }
+
+    # ask for a list element
+    $ListElement = read-host "Insert a number between 0 and " ($ListSortUnique.Count - 1)
+
+    # return $null if no choice was made
+    if (($ListElement -eq $null) -or ($ListElement -eq "")) { return $null }
+
+    # selected item; if user select an item not listed (e.g. 9 in a list from 1 to 5) $SelectedItem will be $null
+    $SelectedItem = $ListSortUnique[$ListElement]
+
+    # return a list element
+    return $SelectedItem
+}
+
+
+
+<# 
+Powershell snippet >[#ArraySearchTextInASpecificRowPsSnippetStex20151107] on onenote
+#>
+<# 
+Function to search inside an array, at a specific row, some text (a regex)
+
+Input:
+> -ArrayToTest: the array to search in
+> -RowNumToTest: the number of the row of the array in which is expected the text that match $RegexToTest
+> -RegexToTest: the regular expression to test
+
+Return:
+> $true: if the text was found
+> $false: if the text was not fount
+
+Event:
+> NONE
+
+Output:
+> NONE
+#>
+function SearchArrayForRegexpInARow()
+{
+param (
+$ArrayToTest = $(throw "-ArrayToSearch is required."), 
+[int]$RowNumToTest = $(throw "-RowToTest is required."), 
+[string]$RegexToTest = $(throw "-RegexToTest is required.")
+)
+
+    $Count=1
+    $TextFound = $false
+
+    foreach ($row in $ArrayToTest)
+    {
+        if (($count -eq $RowNumToTest) -and ($row -match $RegexToTest))
+        {
+            return $true   # return SUCCESS and exit loop
+        }
+        $count = $count + 1
+    }
+
+    return $false   # return FAILED SEARCH
+
+}
+
+
+
 <#
 ################################################################################
 ################################################################################
@@ -1028,8 +1153,8 @@ START OF THE PROGRAM
 
 
 
-LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "start" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog ("lib-Svn-Sync.stex.ps1, action " + $Action + " on " + $WkPath) -CommandDescriptionToLog "start" -CommandOutputToLog ""
 
 . Main
 
-LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Git-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""
+LogAppend -LogFilePath $LogFilePath -CommandToLog "lib-Svn-Sync.stex.ps1" -CommandDescriptionToLog "end" -CommandOutputToLog ""

@@ -14,9 +14,71 @@ See the License for the specific language governing permissions and
 limitations under the License. #>
 
 <# 
-script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2015-11-07 00.41
+script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2015-11-28 01.57
 #>
-<# 
+<# 
+TODOXXXXXXXXXXXXXAAAAAAAAAAAAAA
+
+
+*** trovare IP di un pc conosciuto il NOME <SERVE PER SCRIPT> (mettere anche su ONENOTE)
+$ C:\e3-shared\@svnwk\test>ping V131
+
+Pinging V131 [192.168.1.101] with 32 bytes of data:
+Reply from 192.168.1.101: bytes=32 time=3ms TTL=128
+
+
+
+*** SVN CON IP <NON SERVE PER SCRIPT> (mettere anche su ONENOTE)
+$ svn checkout "svn://192.168.1.101/C:/Users/Stefano/Desktop/vcs sample, svn repo + wk/repo bare.svn" ./
+
+
+
+*** trovare NOME di un pc conosciuto IP <NON SERVE PER SCRIPT> (mettere anche su ONENOTE)
+C:\e3-shared\@svnwk\test>nbtstat  -a 192.168.1.101
+
+Wi-Fi:
+Node IpAddress: [192.168.1.100] Scope Id: []
+
+           NetBIOS Remote Machine Name Table
+
+       Name               Type         Status
+    ---------------------------------------------
+    V131           <20>  UNIQUE      Registered
+    V131           <00>  UNIQUE      Registered
+    WORKGROUP      <00>  GROUP       Registered
+    WORKGROUP      <1E>  GROUP       Registered
+    WORKGROUP      <1D>  UNIQUE      Registered
+    MSBROWSE__<01>  GROUP       Registered
+
+    MAC Address = 4C-80-93-27-D3-19
+
+
+
+***Dividi colonna "RemotePath2DriveLetterID" in 2 parti: "RemotePath2Type" + "RemotePath2Value"
++
+***add ID also on left path for WK on external disk or CLONE
+Type: FromPcNameToIp|FromFileInRootToDriveName|AskUser
+Value: PC Name, File Name, Prameter Name to be asked to the user (don't ask 2 times the same "parameter")
+
+
+
+***Run filelen/filesize check before commit, ONLY ON NEW FILES, *NOT* on all files
+Options of SIZE+LEN on file xl
+If problems, alert user and skip commit.
+If unattended SKIP commit + log error + show error.
+
+
+
+***use SVN SERVE
+command   $ svnserve -d
+relocate   $ svn relocate svn://192.168.1.35/trunk/DDL2DP
+
+http://svnbook.red-bean.com/en/1.7/svn.serverconfig.svnserve.html
+http://stackoverflow.com/questions/16281172/how-to-setup-svnserve-service-to-run-on-windows
+https://www.zennaware.com/cornerstone/helpbook/pages/appendix/svnserve.html
+
+#>
+<# 
 per Git viene chiamato lo script Git-Syncper SVN viene chiamato lo script Svn-Sync
 per MIRR viene chiamato lo script Mirr-Sync (che usa WinMerge)
 #>
@@ -183,7 +245,7 @@ function Main{    # define LOG FILE $LogFilePath and open it    $MyDocsPath =
             if ($RemotePathDrive -eq ":/")
             {
                 # error message to the user
-                ErrorMessage -ErrorMessage $RemotePath2 + " ID not found. Wk " + $WkPath1 + $WkPath3 + " elaboration skipped."
+                ErrorMessage -ErrorMessage ("'" + $RemotePath2 + "' ID not found. Skipped Wk '" + $WkPath1 + $WkPath3 + "'")
                 # set CallExternalScript flag to $false (later in the loop DO NOT call Git | Svn | Mirr scripts
                 # because $WkPath2 was not found with function SearchDrive)
                 $FlagCallExternalScript = $true
@@ -207,7 +269,7 @@ function Main{    # define LOG FILE $LogFilePath and open it    $MyDocsPath =
             }
             "svn"
             {
-                SvnSync -Action $Action -WkPath $WkPath -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage $CommitMessage -Unattended $Unattended > $null
+                SvnSync -Action $Action -WkPath $WkPath -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage $commmmmmmmmmm -Unattended $Unattended > $null
             }
             "mirr"
             {
@@ -236,6 +298,9 @@ INTERNAL FUNCTIONS
 #>
 
 <# 
+Powershell snippet >[#ListSelectItemPsSnippetStex20151107] on onenote
+#>
+<# 
 FUNCTION THAT TAKES AND UNSORTED/DUPLICATED LIST AND RETURN AN ITEM CHOOSEN BY THE USER
 
 Input:
@@ -250,25 +315,6 @@ Event:
 
 Output:
 > NONE
-#>
-<#
-La chiamata a questo script si può fare nel modo seguente:
-
-# unsorted, duplicated list
-$ListTotal = 1, 2, 2, 3, 4, 1, 8, 1, 1, 1, 1, 1, 34, 21, 34, 6, 2,3
-
-# save the return value
-$ReturnValue= . ListChooseElement -ListTotal $ListTotal
-# check the return value
-if ($ReturnValue -eq $null )
-{
-    write-host "wrong choice"
-}
-else
-{
-    write-host $ReturnValue
-
-}
 #>
 function ListSelectItem()
 {
@@ -287,7 +333,7 @@ function ListSelectItem()
     $Count=0
     foreach ($elem in $ListSortUnique)
     {
-        write-host ($count, " ", $elem)
+        write-host ($count, ">", $elem, "<", $count) 
         $count = $count + 1
     }
 
@@ -302,6 +348,53 @@ function ListSelectItem()
 
     # return a list element
     return $SelectedItem
+}
+
+
+
+<# 
+Powershell snippet >[#ArraySearchTextInASpecificRowPsSnippetStex20151107] on onenote
+#>
+<# 
+Function to search inside an array, at a specific row, some text (a regex)
+
+Input:
+> -ArrayToTest: the array to search in
+> -RowNumToTest: the number of the row of the array in which is expected the text that match $RegexToTest
+> -RegexToTest: the regular expression to test
+
+Return:
+> $true: if the text was found
+> $false: if the text was not fount
+
+Event:
+> NONE
+
+Output:
+> NONE
+#>
+function SearchArrayForRegexpInARow()
+{
+param (
+$ArrayToTest = $(throw "-ArrayToSearch is required."), 
+[int]$RowNumToTest = $(throw "-RowToTest is required."), 
+[string]$RegexToTest = $(throw "-RegexToTest is required.")
+)
+
+    $Count=1
+    $TextFound = $false
+
+    foreach ($row in $ArrayToTest)
+    {
+        if (($count -eq $RowNumToTest) -and ($row -match $RegexToTest))
+        {
+            return $true   # return SUCCESS and exit loop
+        }
+        $count = $count + 1
+    }
+
+    return $false   # return FAILED SEARCH
+
 }
 
 
@@ -365,7 +458,7 @@ function ErrorMessage()
     param (
     [string]$ErrorMessage= $(throw "-ErrorMessage is required.")
     )
-    & $PSScriptRoot'.\lib-ErrorMessage.stex.ps1' -ErrorMessage $ErrorMessage
+    & $PSScriptRoot'.\lib\lib-ErrorMessage.stex.ps1' -ErrorMessage $ErrorMessage
 }
 
 

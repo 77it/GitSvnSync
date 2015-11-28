@@ -46,17 +46,13 @@ $CommandOutputToLog = $(throw "-CommandOutputToLog is required.")
 
 
 
+Write-Host -NoNewline "`rEnabling feature XYZ......."
 
+Write-Host -NoNewline "`rEnabling feature XYZz......"
 
-
-
-
+Write-Host -NoNewline "`rEnabling feature XYZzz......"
 
 
 "hello!"
-
-$date = Get-Date -format "yyyyMMddHHmmss"
-
-$date
 
 "end!"

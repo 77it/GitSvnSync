@@ -35,7 +35,10 @@ http://superuser.com/questions/106360/how-to-enable-execution-of-powershell-scri
 
 
 
-The "lib" directory contains Powershell libraries written by me to work with Git/Svn repositories.
+The "code\lib" directory contains Powershell libraries written by me to work with Git/Svn repositories.
+
+
+The "sample repos directory contains Git and Subversion repositories (working copy, bare repository, detached head repository <for Git>) already initialized and connected.
 
 
 

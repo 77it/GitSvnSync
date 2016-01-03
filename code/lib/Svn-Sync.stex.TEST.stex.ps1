@@ -52,13 +52,13 @@ param (
 
 
 
-$Action = "CommitUpdate"
-$WkPath = "C:\Users\Stefano\Desktop\vcs sample, svn repo + wk\repo normal.svnwk"
-$BareRepoPath ="C:\Users\Stefano\Desktop\vcs sample, svn repo + wk\repo bare.svn"
+$Action = "Verify"
+$WkPath = "C:\Users\Stefano\Desktop\vcs sample, svn repo + wk\repo bare BAK.svn"
+$BareRepoPath =""
 $CommitMessage = ""
 $Unattended = "True"
 
-& $PSScriptRoot'.\lib-Svn-Sync.stex.ps1' -Action $Action -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath -CommitMessage $CommitMessage -Unattended $Unattended
+& $PSScriptRoot'.\Svn-Sync.stex.ps1' -Action $Action -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath -CommitMessage $CommitMessage -Unattended $Unattended
 
 
 

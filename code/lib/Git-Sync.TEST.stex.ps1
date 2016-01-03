@@ -52,13 +52,12 @@ param (
 
 
 
-$Action = "FetchMergeErrorIfCommit"
-$WkPath = "C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo normal.gitwk"
+$Action = "Verify"
+$WkPath = "C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo bareBAK.git"
 #$WkPath = "C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo detached.gitwk2"
 $BranchName = "master"
-$BareRepoName = "origin" #optional 
+$BareRepoName = "originBareLocalBakSource" #optional 
 $BareRepoPath ="C:\Users\Stefano\Desktop\vcs sample, git normal, detached, bare repo\repo bare.git"
-$CachePwdSec = "3600"
 $CommitMessage = ""
 $Unattended = "False"
 & $PSScriptRoot'.\Git-Sync.stex.ps1' -Action $Action -WkPath $WkPath -BranchName $BranchName -BareRepoName $BareRepoName -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath -Unattended $Unattended

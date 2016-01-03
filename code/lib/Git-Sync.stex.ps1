@@ -16,7 +16,7 @@ limitations under the License. #>
 <# 
 script Git-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 2015-11-09 18.19
+rev 2016-01-03 01.44
 
 Input:
 > -Action:   (case insensitive)
@@ -26,6 +26,8 @@ Input:
   >> Status:   STATUS
   >> Commit:   COMMIT+LOG
   >> LogToday:   TODAY (added+deleted+modified+total)
+  >> Mirror2LocalBareReposFromRemoteToWk:   FETCH to update the local bare repository contained in -WkPath with the content of a local bare remote repository contained in -BareRepoName and -BareRepoPath + LOG
+  >> Verify:   verify repository (git fsck)
 > -WkPath
   path della working directory
 > -BranchName
@@ -82,8 +84,7 @@ param (
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$WkPath,
-    [Parameter(Mandatory = $true)]
-    [string]$BranchName,
+    [string]$BranchName = "",   #optional
     [string]$BareRepoName = "",   #optional
     [string]$BareRepoPath = "",   #optional
     [Parameter(Mandatory = $true)]
@@ -189,6 +190,24 @@ MAIN
                         $ReturnFlag = $false   # Return Error
                     }
                 } 
+            "Mirror2LocalBareReposFromRemoteToWk"
+                {
+                    if (!(. ActionMirror2LocalBareReposFromRemoteToWk))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Mirror2LocalBareReposFromRemoteToWk in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
+            "Verify"
+                {
+                    if (!(. ActionVerify))
+                    {
+                    # if ERROR with Git command
+                        ErrorMessage ("ERROR with Git Verify (fsck) in "+$WkPath)   # error message on stdout
+                        $ReturnFlag = $false   # Return Error
+                    }
+                } 
             default
                 {
                     ErrorMessage ("-Action ( " + $Action + " ) is not a valid action !!!" )   # error message on stdout
@@ -286,12 +305,16 @@ check if dirs exists:
 
 <#
 check if is a working copy:
+if $Action <> "Mirror2LocalBareReposFromRemoteToWk" and <> "Verify"
 > WkPath
 #>
-    If (! (GitTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
+    If ( ($Action -ne "Mirror2LocalBareReposFromRemoteToWk") -and ($Action -ne "Verify") )   # test WkPath if $Action <> "Mirror2LocalBareReposFromRemoteToWk" and <> "Verify"
     {
-        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Git control !!!" +"   Wk: "+$WkPath) ""
-        return $false   # return Error value
+        If (! (GitTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Git control !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
     
 <#
@@ -330,13 +353,17 @@ check if remote path contains a bare repository:
 
 <#
 check if BranchName is defined in:
+if $Action <> "Verify"
 > WkPath (working copy)
 #>
-    # if $BranchName is not a branch defined in $WkPath, exit with error
-    If (! (GitTestIfBranchIsDefined -PathToTest $WkPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
+    If ($Action -ne "Verify")   # test WkPath if $Action <> "Mirror2LocalBareReposFromRemoteToWk" and <> "Verify"
     {
-        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $WkPath + "' !!!" +"   Wk: "+$WkPath) ""
-        return $false   # return Error value
+        # if $BranchName is not a branch defined in $WkPath, exit with error
+        If (! (GitTestIfBranchIsDefined -PathToTest $WkPath -NameToTest $BranchName -LogFilePath $LogFilePath ))    
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BranchName ( " + $BranchName + " ) is not a Branch defined in '" + $WkPath + "' !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
 
 <#
@@ -379,7 +406,13 @@ if Action have needed parameters:
 > Commit:   
   WkPath
   BranchName
->LogToday:
+> LogToday:
+  WkPath
+> Mirror2LocalBareReposFromRemoteToWk:
+  WkPath
+  BranchName
+  BareRepoName
+> Verify:
   WkPath
 #>
     switch ($Action) 
@@ -425,6 +458,22 @@ if Action have needed parameters:
             }
         } 
         "LogToday"
+        {
+            if (! ($WkPath) )
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
+        } 
+        "Mirror2LocalBareReposFromRemoteToWk"
+        {
+            if (! ( ($WkPath) -and ($BranchName) -and ($BareRepoName) -and ($BareRepoPath) ) ) 
+            {
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing one or more parameters in -WkPath, BranchName, BareRepoName, BareRepoPath"+"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
+        }
+        "Verify"
         {
             if (! ($WkPath) )
             {
@@ -1130,6 +1179,76 @@ function ActionLogToday ()
 
 }
 
+# Mirror2LocalBareReposFromRemoteToWk:   FETCH to update the local bare repository contained in -WkPath with the content of a local bare remote repository contained in -BareRepoName and -BareRepoPath + LOG
+function ActionMirror2LocalBareReposFromRemoteToWk ()
+{
+    # iniziatlize Return Flag
+    $ReturnFlag = $true
+
+    # if $WkPath is not a bare repository, exit with error
+    If (! (GitTestIfRepoIsBare $WkPath $LogFilePath))    
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a Bare Repository !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
+    }
+
+    # if $BareRepoPath is not a bare repository, exit with error
+    If (! (GitTestIfRepoIsBare $BareRepoPath $LogFilePath))    
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-BareRepoPath ( " + $BareRepoPath + " ) is not a Bare Repository !!!" +"   Wk: "+$WkPath) ""
+        return $false   # return Error value
+    }
+
+    # git fetch all branches
+    if (!(GitFetchAllBranches -WkPath $WkPath -BareRepoName $BareRepoName -LogFilePath $LogFilePath))
+    {
+    # if ERROR with Git command
+        ErrorMessage ("ERROR with Git FETCH ALL BRANCHES in "+$WkPath)   # error message on stdout
+        $ReturnFlag = $false   # set Return Flag to False
+        # if not Unattended pause
+        if (! $UnattBool)
+        {
+            Pause -PauseMessage "check LOG and continue <paused...>"
+        }
+    }
+
+    # git log
+    if (!(GitLog -WkPath $WkPath -FullLog $false -LogFilePath $LogFilePath))
+    {
+    # if ERROR with Git command
+        ErrorMessage ("ERROR with Git LOG in "+$WkPath)   # error message on stdout
+        $ReturnFlag = $false   # set Return Flag to False
+    }
+
+    # return Return Flag
+    return $ReturnFlag
+
+}
+
+# Verify:   verify repository (git fsck)
+function ActionVerify ()
+{
+    # iniziatlize Return Flag
+    $ReturnFlag = $true
+
+    # verify repository (git fsck)
+    if (!(GitFsck -WkPath $WkPath -LogFilePath $LogFilePath))
+    {
+    # if ERROR with Git command
+        ErrorMessage ("ERROR with Git Verify (fsck) in "+$WkPath)   # error message on stdout
+        $ReturnFlag = $false   # set Return Flag to False
+        # if not Unattended pause
+        if (! $UnattBool)
+        {
+            Pause -PauseMessage "check LOG and continue <paused...>"
+        }
+    }
+
+    # return Return Flag
+    return $ReturnFlag
+
+}
+
 
 
 <#
@@ -1698,6 +1817,54 @@ param (
 
 
 <#
+Git Fetch All Branches
+
+Input:
+> WkPath: Working Copy path in which do fetch
+> BareRepoName: Remote repo to fetch from
+> LogFilePath: log file path
+
+Return:
+> True if success
+> False if error
+
+Event:
+> if error with parameters
+
+Output:
+> on log
+#>
+function GitFetchAllBranches ()
+{
+param (
+    [string]$WkPath = $(throw "-WkPath is required."),
+    [string]$BareRepoName = $(throw "-BareRepoName is required."),
+    [string]$LogFilePath = $(throw "-LogFilePath is required.")
+)
+
+    # cd to working copy $WkPath
+    cd $WkPath
+
+    # run "git fetch" and save in LOG 
+    $GitCommands = "fetch", $BareRepoName, "+refs/heads/*:refs/heads/*"
+    $cmdOutput = & "git" $GitCommands 2>&1
+    LogAppend $LogFilePath ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+
+    # if error in the last command ($LASTEXITCODE <> 0 ):
+    if ($LASTEXITCODE -ne 0)
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+        return $false   # exit function with ERROR
+    }
+
+    # exit function with SUCCESS
+    return $true
+
+}
+
+
+
+<#
 Git Merge Diff
 
 Input:
@@ -2132,6 +2299,7 @@ Git Log
 
 Input:
 > WkPath: Working Copy path in which do fetch
+> $FullLog: True | False
 > LogFilePath: log file path
 
 Return:
@@ -2200,6 +2368,54 @@ param (
 
 }
 
+
+
+<#
+Git Fsck
+
+Input:
+> WkPath: Working Copy path in which do fsck
+> LogFilePath: log file path
+
+Return:
+> True if success
+> False if error
+
+Event:
+> if error with parameters
+
+Output:
+> on log
+#>
+function GitFsck ()
+{
+param (
+    [string]$WkPath = $(throw "-WkPath is required."),
+    [string]$LogFilePath = $(throw "-LogFilePath is required.")
+)
+
+    # cd to working copy $WkPath
+    cd $WkPath
+
+    # run GIT FSCK and save log
+    
+    $GitCommands = "fsck"
+    $cmdOutput = & "git" $GitCommands 2>&1
+
+    LogAppend $LogFilePath ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+    LogAppend ($LogFilePath + ".core.txt") ("git "+$GitCommands) (" called in " + $WkPath + ", branch " + $BranchName + ", remote " + $BareRepoName) $cmdOutput
+
+    # if error in the last command ($LASTEXITCODE <> 0 ):
+    if ($LASTEXITCODE -ne 0)
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("git "+$GitCommands) ("called in " + $WkPath) $cmdOutput
+        return $false   # exit function with ERROR
+    }
+
+    # exit function with SUCCESS
+    return $true
+
+}
 
 
 

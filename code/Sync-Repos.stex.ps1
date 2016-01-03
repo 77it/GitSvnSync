@@ -14,68 +14,38 @@ See the License for the specific language governing permissions and
 limitations under the License. #>
 
 <# 
-script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2015-11-28 01.57
+script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2016-01-03 01.54
 #>
 <# 
 TODOXXXXXXXXXXXXXAAAAAAAAAAAAAA
 
-
-*** trovare IP di un pc conosciuto il NOME <SERVE PER SCRIPT> (mettere anche su ONENOTE)
-$ C:\e3-shared\@svnwk\test>ping V131
-
-Pinging V131 [192.168.1.101] with 32 bytes of data:
-Reply from 192.168.1.101: bytes=32 time=3ms TTL=128
+***ERRORI NON COMPLETAMENTE STAMPATI
+controlla riga 217 / 237 di errore in Sync-Repos.stex.ps1 (non stampa integralmente l'errore)
 
 
 
-*** SVN CON IP <NON SERVE PER SCRIPT> (mettere anche su ONENOTE)
-$ svn checkout "svn://192.168.1.101/C:/Users/Stefano/Desktop/vcs sample, svn repo + wk/repo bare.svn" ./
-
-
-
-*** trovare NOME di un pc conosciuto IP <NON SERVE PER SCRIPT> (mettere anche su ONENOTE)
-C:\e3-shared\@svnwk\test>nbtstat  -a 192.168.1.101
-
-Wi-Fi:
-Node IpAddress: [192.168.1.100] Scope Id: []
-
-           NetBIOS Remote Machine Name Table
-
-       Name               Type         Status
-    ---------------------------------------------
-    V131           <20>  UNIQUE      Registered
-    V131           <00>  UNIQUE      Registered
-    WORKGROUP      <00>  GROUP       Registered
-    WORKGROUP      <1E>  GROUP       Registered
-    WORKGROUP      <1D>  UNIQUE      Registered
-    MSBROWSE__<01>  GROUP       Registered
-
-    MAC Address = 4C-80-93-27-D3-19
-
-
-
-***Dividi colonna "RemotePath2DriveLetterID" in 2 parti: "RemotePath2Type" + "RemotePath2Value"
-+
-***add ID also on left path for WK on external disk or CLONE
-Type: FromPcNameToIp|FromFileInRootToDriveName|AskUser
-Value: PC Name, File Name, Prameter Name to be asked to the user (don't ask 2 times the same "parameter")
+*** LASTEXITCODE SU GIT E SVN
+controlla su Git e Svn LASTEXITCODE appena dopo $cmdoutput e non dopo LOG
 
 
 
 ***Run filelen/filesize check before commit, ONLY ON NEW FILES, *NOT* on all files
 Options of SIZE+LEN on file xl
-If problems, alert user and skip commit.
+If problems, alert user and pause to wait for commit confirmation.
 If unattended SKIP commit + log error + show error.
 
 
 
-***use SVN SERVE
-command   $ svnserve -d
-relocate   $ svn relocate svn://192.168.1.35/trunk/DDL2DP
 
-http://svnbook.red-bean.com/en/1.7/svn.serverconfig.svnserve.html
-http://stackoverflow.com/questions/16281172/how-to-setup-svnserve-service-to-run-on-windows
-https://www.zennaware.com/cornerstone/helpbook/pages/appendix/svnserve.html
+***Dividi colonna "RemotePath2DriveLetterID" in 2 parti: "RemotePath2Type" + "RemotePath2Value"   (IMPLEMENTA SENZA FRETTA, E' UTILE SOLO PER LA SINCRONIZZAZIONE DI SUBVERSION SU RETE CON SVNSERVE UTILIZZANDO L'INDIRIZZO IP DEL PC COL REPOSITORY)
+Type: FromPcNameToIp|FromFileInRootToDriveName|AskUser
+Value: PC Name, File Name, Prameter Name to be asked to the user (don't ask 2 times the same "parameter")
+
+Spiegazione:
+> "FromPcNameToIp" serve per i repository svn, per i quali SvnServe utilizza l'ip e non il nome computer
+
+
+
 
 #>
 <# 
@@ -106,7 +76,7 @@ Git | Svn | Mirr | Field
  X  |  X  |  X   | RemotePath1Start = start of the Remote Repository Path
  X  |  X  |  X   | RemotePath2DriveLetterID = Remote Repository ID of the Drive Letter
  X  |  X  |  X   | RemotePath3End = end of the Remote Repository Path
- X  |  X  |  X   | Action = Action to execute (passed to the called script)
+ X  |  X  |  X   | Action = Action to execute (passed to the called script; not defined here, but in the called script)
 
 
 there are cases, for example with network drives, in which $RemotePath is defined and $RemoteId not.
@@ -265,11 +235,11 @@ function Main{    # define LOG FILE $LogFilePath and open it    $MyDocsPath =
         {
             "git"
             {
-                GitSync -Action $Action -WkPath $WkPath -BranchName $BranchName -BareRepoName $RemoteName -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage "x" -Unattended $Unattended > $null
+                GitSyncX -Action $Action -WkPath $WkPath -BranchName $BranchName -BareRepoName $RemoteName -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage "x" -Unattended $Unattended > $null
             }
             "svn"
             {
-                SvnSync -Action $Action -WkPath $WkPath -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage $commmmmmmmmmm -Unattended $Unattended > $null
+                SvnSyncX -Action $Action -WkPath $WkPath -BareRepoPath $RemotePath -LogFilePath $LogFilePath -CommitMessage $commmmmmmmmmm -Unattended $Unattended > $null
             }
             "mirr"
             {
@@ -410,15 +380,14 @@ OTHER EXTERNAL FUNCTIONS
 #>
 
 # git 
-function GitSync()
+function GitSyncX()
 {
 param (
     [Parameter(Mandatory = $true)]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$WkPath,
-    [Parameter(Mandatory = $true)]
-    [string]$BranchName,
+    [string]$BranchName = "",   #optional
     [string]$BareRepoName = "",   #optional
     [string]$BareRepoPath = "",   #optional
     [Parameter(Mandatory = $true)]
@@ -433,14 +402,13 @@ param (
 
 
 # svn
-function SvnSync()
+function SvnSyncX()
 {
 param (
     [Parameter(Mandatory = $true)]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$WkPath,
-    [Parameter(Mandatory = $true)]
     [string]$BareRepoPath = "",   #optional
     [Parameter(Mandatory = $true)]
     [string]$LogFilePath,

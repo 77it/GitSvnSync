@@ -16,11 +16,13 @@ limitations under the License. #>
 <# 
 script Svn-Sync
 by Stefano Spinucci virgo977virgo at gmail.com
-rev 2015-11-28 01.54
+rev 2016-01-03 01.30
 
 Input:
 > -Action:   (case insensitive)
   >> CommitUpdate:  COMMIT(diff)+UPDATE
+  >> Mirror2LocalBareReposFromRemoteToWk:   $ svnsync synchronize DEST_URL [SOURCE_URL] 
+  >> Verify:   $ svnadmin verify .
 > -WkPath
   path della working directory
 > [-BareRepoPath]
@@ -63,7 +65,6 @@ param (
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$WkPath,
-    [Parameter(Mandatory = $true)]
     [string]$BareRepoPath = "",   #optional
     [Parameter(Mandatory = $true)]
     [string]$LogFilePath,
@@ -101,13 +102,16 @@ MAIN
     # if no error with checks
     else
     {
-        # if -BareRepoPath has a value <> "" 
-        # if this value is present is executed the command "svn relocate" with the new Repository Root 
-        if ($BareRepoPath)
+        If ( ($Action -ne "Mirror2LocalBareReposFromRemoteToWk") -and ($Action -ne "Verify") )   # check -BareRepoPath and launch "svn relocate" if $Action <> "Mirror2LocalBareReposFromRemoteToWk"   pippo
         {
-            if (!(SvnReplaceRepositoryRoot -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath))
+            # if -BareRepoPath has a value <> ""
+            # if this value is present is executed the command "svn relocate" with the new Repository Root 
+            if ($BareRepoPath)
             {
-                ErrorMessage ("ERROR with Svn Relocate of " + $WkPath + " to " + $BareRepoPath )   # error message on stdout
+                if (!(SvnReplaceRepositoryRoot -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath))
+                {
+                    ErrorMessage ("ERROR with Svn Relocate of " + $WkPath + " to " + $BareRepoPath )   # error message on stdout
+                }
             }
         }
         
@@ -120,6 +124,24 @@ MAIN
                 {
                 # if ERROR with Svn command
                     ErrorMessage ("ERROR with Svn COMMIT(diff)+UPDATE in "+$WkPath)   # error message on stdout
+                    $ReturnFlag = $false   # Return Error
+                }
+            }
+            "Mirror2LocalBareReposFromRemoteToWk"
+            {
+                if (!(. ActionMirror2LocalBareReposFromRemoteToWk))
+                {
+                # if ERROR with Svn command
+                    ErrorMessage ("ERROR with Svn Mirror2LocalBareReposFromRemoteToWk in "+$WkPath)   # error message on stdout
+                    $ReturnFlag = $false   # Return Error
+                }
+            }
+            "Verify"
+            {
+                if (!(. ActionVerify))
+                {
+                # if ERROR with Svn command
+                    ErrorMessage ("ERROR with Svnadmin verify in "+$WkPath)   # error message on stdout
                     $ReturnFlag = $false   # Return Error
                 }
             }
@@ -190,14 +212,17 @@ check if file exists:
 
 <#
 check if dirs exists:
+if $Action <> "Mirror2LocalBareReposFromRemoteToWk"
 > WkPath
 #>
-    If (!(Test-Path -path $WkPath -PathType Container))
+    If ($Action -ne "Mirror2LocalBareReposFromRemoteToWk")   # test WkPath if $Action <> "Mirror2LocalBareReposFromRemoteToWk"   
     {
-        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
-        return $false   # return Error value
-    }
-
+        If (!(Test-Path -path $WkPath -PathType Container))
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
+    }
 <#
 !!! THIS CONTROL IS NOT DONE BECAUSE -BareRepoPath CAN BE A NETWORK SHARE
 
@@ -215,12 +240,16 @@ check if dirs exists:
 
 <#
 check if is a working copy:
+if $Action <> "Mirror2LocalBareReposFromRemoteToWk" and <> "Verify"
 > WkPath
 #>
-    If (! (SvnTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))    
+    If ( ( $Action -ne "Mirror2LocalBareReposFromRemoteToWk") -and ( $Action -ne "Verify") )  # test WkPath if $Action <> "Mirror2LocalBareReposFromRemoteToWk"
     {
-        LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Svn control !!!" +"   Wk: "+$WkPath) ""
-        return $false   # return Error value
+        If (! (SvnTestIfDirIsUnderControl -PathToTest $WkPath -LogFilePath $LogFilePath ))   
+        {
+            LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("-WkPath ( " + $WkPath + " ) is not a directory under Svn control !!!" +"   Wk: "+$WkPath) ""
+            return $false   # return Error value
+        }
     }
 
     
@@ -254,6 +283,22 @@ if Action have needed parameters:
     switch ($Action) 
     { 
         "CommitUpdate"
+        {
+            if (! ($WkPath) )
+            { 
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
+        } 
+        "Mirror2LocalBareReposFromRemoteToWk"
+        {
+            if (! ( ($WkPath) -and ($BareRepoPath) ) ) 
+            { 
+                LogAppend ($LogFilePath + ".error.txt") ("Internal checks FAILED") ("Missing -WkPath or -BareRepoPath" +"   Wk: "+$WkPath) ""
+                return $false   # return Error value
+            }
+        } 
+        "Verify"
         {
             if (! ($WkPath) )
             { 
@@ -354,9 +399,6 @@ svn st
 svn up
 
 #>
-
-
-
 function ActionCommitUpdate ()
 {
 
@@ -454,6 +496,73 @@ function ActionCommitUpdate ()
         }
     }
 
+
+    # return Return Flag
+    return $ReturnFlag
+
+}
+
+
+
+<#
+
+# do svn synchronize between two repositories
+$ svnsync synchronize "file:///C:/bak.svn" "file:///C:/source.svn"
+
+#>
+function ActionMirror2LocalBareReposFromRemoteToWk ()
+{
+
+    # iniziatlize Return Flag
+    $ReturnFlag = $true
+
+    # svn sync
+    write-host "`nSvn SYNCHRONIZE" -ForegroundColor Red
+    if (!(SvnSynchronize -WkPath $WkPath -BareRepoPath $BareRepoPath -LogFilePath $LogFilePath))
+    {
+    # if ERROR with Svn command
+        ErrorMessage ("ERROR with Svn SYNCHRONIZE in "+$WkPath)   # error message on stdout
+        $ReturnFlag = $false   # set Return Flag to False
+        # if not Unattended pause
+        if (! $UnattBool)
+        {
+            Pause -PauseMessage "check LOG and continue <paused...>"
+        }
+    }
+
+
+    # return Return Flag
+    return $ReturnFlag
+
+}
+
+
+
+<#
+
+# verify a repository
+$ svnadmin verify .
+
+#>
+function ActionVerify ()
+{
+
+    # iniziatlize Return Flag
+    $ReturnFlag = $true
+
+    # svnadmin verify
+    write-host "`nSvnadmin VERIFY" -ForegroundColor Red
+    if (!(SvnadminVerify -WkPath $WkPath -LogFilePath $LogFilePath))
+    {
+    # if ERROR with Svn command
+        ErrorMessage ("ERROR with Svnadmin VERIFY in "+$WkPath)   # error message on stdout
+        $ReturnFlag = $false   # set Return Flag to False
+        # if not Unattended pause
+        if (! $UnattBool)
+        {
+            Pause -PauseMessage "check LOG and continue <paused...>"
+        }
+    }
 
     # return Return Flag
     return $ReturnFlag
@@ -872,6 +981,106 @@ param (
     if ($LASTEXITCODE -ne 0)
     {
         LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+        return $false   # exit function with ERROR
+    }
+
+    # exit function with SUCCESS
+    return $true
+
+}
+
+
+
+<#
+Svn Synchronize
+
+Input:
+> WkPath: Working Copy path in which do fetch
+> BareRepoPath: vare repository
+> LogFilePath: log file path
+
+Return:
+> True if success
+> False if error
+
+Event:
+> if error with parameters
+
+Output:
+> on log
+#>
+function SvnSynchronize ()
+{
+param (
+    [string]$WkPath = $(throw "-WkPath is required."),
+    [string]$BareRepoPath = $(throw "-BareRepoPath is required."),
+    [string]$LogFilePath = $(throw "-LogFilePath is required.")
+)
+
+    # run "svnsync" and save in LOG 
+    $SvnCommands = "synchronize", $WkPath, $BareRepoPath
+    $cmdOutput = & "svnsync" $SvnCommands 2>&1
+    LogAppend $LogFilePath ("svnsync "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+
+    # if there is some output, write $cmdOutput in ".core" LOG
+    if ($cmdOutput)
+    {
+        LogAppend ($LogFilePath + ".core.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    }
+
+    # if error in the last command ($LASTEXITCODE <> 0 ):
+    if ($LASTEXITCODE -ne 0)
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("svn "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+        return $false   # exit function with ERROR
+    }
+
+    # exit function with SUCCESS
+    return $true
+
+}
+
+
+
+<#
+Svnadmin Verify
+
+Input:
+> WkPath: Working Copy path in which do fetch
+> LogFilePath: log file path
+
+Return:
+> True if success
+> False if error
+
+Event:
+> if error with parameters
+
+Output:
+> on log
+#>
+function SvnadminVerify ()   
+{
+param (
+    [string]$WkPath = $(throw "-WkPath is required."),
+    [string]$LogFilePath = $(throw "-LogFilePath is required.")
+)
+
+    # run "svnadmin verify" and save in LOG 
+    $SvnCommands = "verify", "$WkPath"
+    $cmdOutput = & "svnadmin" $SvnCommands 2>&1
+    LogAppend $LogFilePath ("svnadmin "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+
+    # if there is some output, write $cmdOutput in ".core" LOG
+    if ($cmdOutput)
+    {
+        LogAppend ($LogFilePath + ".core.txt") ("svnadmin "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
+    }
+
+    # if error in the last command ($LASTEXITCODE <> 0 ):
+    if ($LASTEXITCODE -ne 0)
+    {
+        LogAppend ($LogFilePath + ".error.txt") ("svnadmin "+$SvnCommands) ("called in " + $WkPath) $cmdOutput
         return $false   # exit function with ERROR
     }
 

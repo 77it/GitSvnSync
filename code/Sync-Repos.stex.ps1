@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License. #>
 
 <# 
-script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2016-01-03 01.54
+script che processa un file CSV a scelta dell'utente eseguendo per ogni riga del file Git | Svn | Winmergerev 2016-01-17 15.40
 #>
 <# 
 TODOXXXXXXXXXXXXXAAAAAAAAAAAAAA
@@ -253,7 +253,7 @@ function Main{    # define LOG FILE $LogFilePath and open it    $MyDocsPath =
     }
 
     # end of script message + pause
-    Pause -PauseMessage "`nEND of script`n"
+    Pause -PauseMessage "`nEND of script"
 
 }
 
